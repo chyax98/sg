@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Gateway</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f23; color: #e0e0e0; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 24px; }
+h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
+.subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 1px solid #333; }
+.tab { padding: 10px 20px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; transition: all .2s; }
+.tab:hover { color: #ccc; }
+.tab.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Cards */
+.card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; }
+.badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.badge-healthy { background: #1a3a1a; color: #4caf50; }
+.badge-unhealthy { background: #3a1a1a; color: #f44336; }
+.badge-fallback { background: #2a2a1a; color: #ff9800; }
+.badge-free { background: #1a2a3a; color: #00d4ff; }
+.card-meta { color: #888; font-size: 12px; }
+.card-meta span { margin-right: 16px; }
+.card-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Buttons */
+.btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all .2s; }
+.btn-primary { background: #00d4ff; color: #000; }
+.btn-primary:hover { background: #00b8e6; }
+.btn-danger { background: #f44336; color: #fff; }
+.btn-danger:hover { background: #d32f2f; }
+.btn-outline { background: transparent; border: 1px solid #444; color: #ccc; }
+.btn-outline:hover { border-color: #00d4ff; color: #00d4ff; }
+
+/* Form */
+.form-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
+.form-overlay.active { display: flex; }
+.form-box { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 24px; width: 480px; max-height: 80vh; overflow-y: auto; }
+.form-box h3 { margin-bottom: 16px; color: #00d4ff; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 13px; color: #aaa; margin-bottom: 4px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; background: #0f0f23; border: 1px solid #333; border-radius: 4px; color: #e0e0e0; font-size: 14px; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #00d4ff; }
+.form-group small { color: #666; font-size: 11px; }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* Toggle */
+.toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggle input { display: none; }
+.toggle-slider { width: 36px; height: 20px; background: #333; border-radius: 10px; position: relative; transition: .2s; }
+.toggle-slider::after { content: ''; position: absolute; width: 16px; height: 16px; background: #888; border-radius: 50%; top: 2px; left: 2px; transition: .2s; }
+.toggle input:checked + .toggle-slider { background: #00d4ff; }
+.toggle input:checked + .toggle-slider::after { left: 18px; background: #fff; }
+
+/* Settings */
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #222; }
+.setting-label { font-size: 14px; }
+.setting-desc { font-size: 12px; color: #666; }
+
+/* Status bar */
+.status-bar { display: flex; gap: 16px; margin-bottom: 20px; padding: 10px 16px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: #888; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.dot-green { background: #4caf50; }
+.dot-red { background: #f44336; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: #2a2a4a; border-left: 3px solid #00d4ff; border-radius: 4px; font-size: 13px; z-index: 200; animation: fadeIn .3s; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Search Gateway</h1>
+  <p class="subtitle">Search Instance Configuration</p>
+
+  <div class="status-bar" id="statusBar">Loading...</div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('providers')">Instances</div>
+    <div class="tab" onclick="showTab('settings')">Settings</div>
+    <div class="tab" onclick="showTab('history')">History</div>
+  </div>
+
+  <!-- Providers Panel -->
+  <div class="panel active" id="panel-providers">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <span style="color:#888;font-size:13px;" id="providerCount"></span>
+      <button class="btn btn-primary" onclick="openAddForm()">+ Add Instance</button>
+    </div>
+    <div id="providerList"></div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Strategy</div>
+          <div class="setting-desc">How to select providers for each request</div>
+        </div>
+        <select id="settingStrategy" onchange="saveSettings()" style="width:160px;padding:6px 10px;background:#0f0f23;border:1px solid #333;border-radius:4px;color:#e0e0e0;">
+          <option value="failover">Failover (priority order)</option>
+          <option value="random">Random</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">MCP Server</div>
+          <div class="setting-desc">Expose search as MCP tools</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="settingMcp" onchange="saveSettings()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Search History</div>
+          <div class="setting-desc">Record every search to filesystem</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="settingHistory" onchange="saveSettings()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row" style="border:none;">
+        <div>
+          <div class="setting-label">Reload Config</div>
+          <div class="setting-desc">Apply changes and reinitialize providers</div>
+        </div>
+        <button class="btn btn-outline" onclick="reloadConfig()">Reload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Panel -->
+  <div class="panel" id="panel-history">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <span style="color:#888;font-size:13px;" id="historyCount"></span>
+      <button class="btn btn-danger" onclick="clearHistory()">Clear History</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<!-- Add/Edit Provider Form -->
+<div class="form-overlay" id="formOverlay">
+  <div class="form-box">
+    <h3 id="formTitle">Add Instance</h3>
+    <form onsubmit="return saveProvider(event)">
+      <div class="form-group">
+        <label>Instance ID</label>
+        <input type="text" id="formId" placeholder="e.g. firecrawl-1" required>
+        <small>Unique ID for this instance</small>
+      </div>
+      <div class="form-group">
+        <label>Provider Type</label>
+        <select id="formType" onchange="onTypeChange()" required>
+          <option value="">Select provider...</option>
+        </select>
+      </div>
+      <div class="form-group" id="groupApiKey">
+        <label>API Key</label>
+        <input type="text" id="formApiKey" placeholder="API key or ${ENV_VAR}">
+        <small>Supports ${VAR_NAME} for environment variable references</small>
+      </div>
+      <div class="form-group" id="groupUrl" style="display:none;">
+        <label>URL</label>
+        <input type="text" id="formUrl" placeholder="http://localhost:8888">
+      </div>
+      <div class="form-group" id="groupCx" style="display:none;">
+        <label>Search Engine ID (cx)</label>
+        <input type="text" id="formCx" placeholder="Google Custom Search Engine ID">
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <input type="number" id="formPriority" value="10" min="1" max="100">
+        <small>Lower = higher priority. Used for failover order.</small>
+      </div>
+      <div class="form-group">
+        <label class="toggle">
+          <input type="checkbox" id="formEnabled" checked>
+          <span class="toggle-slider"></span>
+          <span style="margin-left:8px;">Enabled</span>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" onclick="closeForm()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let providerTypes = [];
+let editingId = null;
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[onclick*="' + name + '"]').classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'history') loadHistory();
+}
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+async function loadStatus() {
+  try {
+    const resp = await fetch(API + '/status');
+    const data = await resp.json();
+    const dot = data.running ? '<span class="dot dot-green"></span>' : '<span class="dot dot-red"></span>';
+    document.getElementById('statusBar').innerHTML =
+      dot + (data.running ? ' Running' : ' Stopped') +
+      '<span style="margin-left:16px;">Port: ' + data.port + '</span>' +
+      '<span style="margin-left:16px;">Strategy: ' + (data.strategy || 'N/A') + '</span>' +
+      '<span style="margin-left:16px;">Providers: ' + data.providers.healthy + '/' + data.providers.total + '</span>';
+  } catch(e) {
+    document.getElementById('statusBar').innerHTML = '<span class="dot dot-red"></span> Cannot connect to gateway';
+  }
+}
+
+async function loadProviders() {
+  try {
+    const [provResp, typesResp] = await Promise.all([
+      fetch(API + '/providers'),
+      fetch(API + '/api/provider-types'),
+    ]);
+    const providers = await provResp.json();
+    providerTypes = await typesResp.json();
+
+    document.getElementById('providerCount').textContent = providers.length + ' instance(s)';
+
+    if (!providers.length) {
+      document.getElementById('providerList').innerHTML =
+        '<div class="card" style="text-align:center;color:#666;padding:32px;">No instances configured. Click "+ Add Instance" to get started.</div>';
+      return;
+    }
+
+    document.getElementById('providerList').innerHTML = providers.map(function(p) {
+      var typeInfo = providerTypes.find(function(t) { return t.type === p.type; }) || {};
+      var badges = [];
+      badges.push(p.healthy ? '<span class="badge badge-healthy">Healthy</span>' : '<span class="badge badge-unhealthy">Unhealthy</span>');
+      if (p.is_fallback) badges.push('<span class="badge badge-fallback">Fallback</span>');
+      if (typeInfo.free) badges.push('<span class="badge badge-free">Free</span>');
+
+      return '<div class="card">' +
+        '<div class="card-header">' +
+          '<span class="card-title">' + esc(p.name) + '</span>' +
+          '<div>' + badges.join(' ') + '</div>' +
+        '</div>' +
+        '<div class="card-meta">' +
+          '<span>Type: ' + esc(p.type || 'unknown') + '</span>' +
+          '<span>Priority: ' + p.priority + '</span>' +
+          '<span>Capabilities: ' + p.capabilities.join(', ') + '</span>' +
+        '</div>' +
+        '<div class="card-actions">' +
+          '<button class="btn btn-outline" onclick="editProvider(\'' + esc(p.name) + '\')">Edit</button>' +
+          '<button class="btn btn-danger" onclick="deleteProvider(\'' + esc(p.name) + '\')">Delete</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    document.getElementById('providerList').innerHTML =
+      '<div class="card" style="color:#f44336;">Failed to load providers. Is the gateway running?</div>';
+  }
+}
+
+function openAddForm() {
+  editingId = null;
+  document.getElementById('formTitle').textContent = 'Add Provider';
+  document.getElementById('formId').value = '';
+  document.getElementById('formId').disabled = false;
+  document.getElementById('formType').value = '';
+  document.getElementById('formApiKey').value = '';
+  document.getElementById('formUrl').value = '';
+  document.getElementById('formCx').value = '';
+  document.getElementById('formPriority').value = '10';
+  document.getElementById('formEnabled').checked = true;
+
+  var sel = document.getElementById('formType');
+  sel.innerHTML = '<option value="">Select provider type...</option>';
+  providerTypes.forEach(function(t) {
+    sel.innerHTML += '<option value="' + t.type + '">' + t.name + ' (' + t.type + ')</option>';
+  });
+  onTypeChange();
+  document.getElementById('formOverlay').classList.add('active');
+}
+
+async function editProvider(id) {
+  try {
+    var resp = await fetch(API + '/api/config');
+    var config = await resp.json();
+    var p = (config.providers || {})[id];
+    if (!p) { toast('Provider not found in config'); return; }
+
+    editingId = id;
+    document.getElementById('formTitle').textContent = 'Edit Provider';
+    document.getElementById('formId').value = id;
+    document.getElementById('formId').disabled = true;
+
+    var sel = document.getElementById('formType');
+    sel.innerHTML = '<option value="">Select provider type...</option>';
+    providerTypes.forEach(function(t) {
+      sel.innerHTML += '<option value="' + t.type + '">' + t.name + ' (' + t.type + ')</option>';
+    });
+    sel.value = p.type || '';
+
+    document.getElementById('formApiKey').value = p.api_key || '';
+    document.getElementById('formUrl').value = p.url || '';
+    document.getElementById('formCx').value = (p.env && p.env.cx) ? p.env.cx : '';
+    document.getElementById('formPriority').value = p.priority || 10;
+    document.getElementById('formEnabled').checked = p.enabled !== false;
+
+    onTypeChange();
+    document.getElementById('formOverlay').classList.add('active');
+  } catch(e) {
+    toast('Error loading provider config');
+  }
+}
+
+function closeForm() {
+  document.getElementById('formOverlay').classList.remove('active');
+}
+
+function onTypeChange() {
+  var type = document.getElementById('formType').value;
+  var typeInfo = providerTypes.find(function(t) { return t.type === type; });
+  document.getElementById('groupApiKey').style.display = (!typeInfo || typeInfo.needs_api_key) ? '' : 'none';
+  document.getElementById('groupUrl').style.display = (typeInfo && typeInfo.needs_url) ? '' : 'none';
+  document.getElementById('groupCx').style.display = (type === 'google') ? '' : 'none';
+}
+
+async function saveProvider(e) {
+  e.preventDefault();
+  var id = editingId || document.getElementById('formId').value.trim();
+  if (!id) { toast('Instance ID is required'); return false; }
+
+  var type = document.getElementById('formType').value;
+  if (!type) { toast('Type is required'); return false; }
+
+  var body = {
+    type: type,
+    enabled: document.getElementById('formEnabled').checked,
+    priority: parseInt(document.getElementById('formPriority').value) || 10,
+    timeout: 30000,
+    is_fallback: type === 'duckduckgo',
+    env: {},
+  };
+
+  var apiKey = document.getElementById('formApiKey').value.trim();
+  if (apiKey) body.api_key = apiKey;
+
+  var url = document.getElementById('formUrl').value.trim();
+  if (url) body.url = url;
+
+  var cx = document.getElementById('formCx').value.trim();
+  if (cx) body.env.cx = cx;
+
+  try {
+    var resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    toast('Provider saved. Click Reload in Settings to apply.');
+    closeForm();
+    loadProviders();
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+  return false;
+}
+
+async function deleteProvider(id) {
+  if (!confirm('Delete provider "' + id + '"?')) return;
+  try {
+    var resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!resp.ok) throw new Error(await resp.text());
+    toast('Provider deleted. Click Reload in Settings to apply.');
+    loadProviders();
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function loadSettings() {
+  try {
+    var resp = await fetch(API + '/api/config');
+    var config = await resp.json();
+    document.getElementById('settingStrategy').value = (config.load_balancer && config.load_balancer.strategy) || 'failover';
+    document.getElementById('settingMcp').checked = (config.mcp && config.mcp.enabled) || false;
+    document.getElementById('settingHistory').checked = !config.history || config.history.enabled !== false;
+  } catch(e) {}
+}
+
+async function saveSettings() {
+  try {
+    await fetch(API + '/api/config/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        strategy: document.getElementById('settingStrategy').value,
+        mcp_enabled: document.getElementById('settingMcp').checked,
+        history_enabled: document.getElementById('settingHistory').checked,
+      }),
+    });
+    toast('Settings saved. Click Reload to apply.');
+  } catch(e) {
+    toast('Error saving settings');
+  }
+}
+
+async function reloadConfig() {
+  try {
+    var resp = await fetch(API + '/api/config/reload', { method: 'POST' });
+    if (!resp.ok) throw new Error(await resp.text());
+    toast('Configuration reloaded!');
+    setTimeout(function() { loadStatus(); loadProviders(); }, 500);
+  } catch(e) {
+    toast('Reload failed: ' + e.message);
+  }
+}
+
+async function loadHistory() {
+  try {
+    var resp = await fetch(API + '/api/history?limit=50');
+    var entries = await resp.json();
+    document.getElementById('historyCount').textContent = entries.length + ' recent search(es)';
+
+    if (!entries.length) {
+      document.getElementById('historyList').innerHTML =
+        '<div class="card" style="text-align:center;color:#666;padding:32px;">No search history yet.</div>';
+      return;
+    }
+
+    document.getElementById('historyList').innerHTML = entries.map(function(e) {
+      var ts = e.timestamp.slice(0, 19).replace('T', ' ');
+      return '<div class="card" style="padding:10px 16px;">' +
+        '<div style="display:flex;justify-content:space-between;">' +
+          '<span>' + esc(e.query) + '</span>' +
+          '<span class="card-meta">' + ts + '</span>' +
+        '</div>' +
+        '<div class="card-meta" style="margin-top:4px;">' +
+          '<span>' + esc(e.provider) + '</span>' +
+          '<span>' + e.total + ' results</span>' +
+          '<span>' + e.latency_ms.toFixed(0) + 'ms</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    document.getElementById('historyList').innerHTML =
+      '<div class="card" style="color:#f44336;">Failed to load history.</div>';
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all search history?')) return;
+  try {
+    var resp = await fetch(API + '/api/history', { method: 'DELETE' });
+    var data = await resp.json();
+    toast('Cleared ' + data.deleted + ' entries');
+    loadHistory();
+  } catch(e) {
+    toast('Error clearing history');
+  }
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Init
+loadStatus();
+loadProviders();
+loadSettings();
+setInterval(loadStatus, 15000);
+</script>
+</body>
+</html>

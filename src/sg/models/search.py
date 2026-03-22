@@ -1,0 +1,113 @@
+"""Search request/response models."""
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class SearchRequest(BaseModel):
+    """Search request."""
+    query: str
+    provider: str | None = None
+    max_results: int = Field(default=10, ge=1, le=50)
+    include_domains: list[str] = []
+    exclude_domains: list[str] = []
+    time_range: str | None = None  # day, week, month, year
+    search_depth: str = "basic"  # basic, advanced
+    extra: dict[str, Any] = {}
+
+
+class SearchResult(BaseModel):
+    """Single search result."""
+    title: str
+    url: str
+    content: str = ""
+    snippet: str = ""
+    score: float = 0.0
+    source: str  # provider instance id
+    published_date: str | None = None
+    author: str | None = None
+    raw_content: str | None = None
+    extra: dict[str, Any] = {}
+
+    def model_post_init(self, __context):
+        if self.snippet and not self.content:
+            self.content = self.snippet
+        if self.content and not self.snippet:
+            self.snippet = self.content
+
+
+class SearchResponse(BaseModel):
+    """Search response."""
+    query: str
+    provider: str
+    results: list[SearchResult]
+    total: int
+    latency_ms: float
+    cached: bool = False
+
+
+class ExtractRequest(BaseModel):
+    """Extract request."""
+    urls: list[str]
+    format: str = "markdown"
+    extract_depth: str = "basic"
+    query: str | None = None
+
+
+class ExtractResult(BaseModel):
+    """Extract result."""
+    url: str
+    content: str
+    title: str | None = None
+    error: str | None = None
+
+
+class ExtractResponse(BaseModel):
+    """Extract response."""
+    results: list[ExtractResult]
+    provider: str
+    latency_ms: float
+
+
+class ResearchRequest(BaseModel):
+    """Deep research request."""
+    topic: str
+    depth: str = "auto"
+    max_sources: int = 10
+
+
+class ResearchResponse(BaseModel):
+    """Deep research response."""
+    topic: str
+    content: str
+    sources: list[str]
+    provider: str
+    latency_ms: float
+
+
+class ProviderStatus(BaseModel):
+    """Provider status."""
+    name: str
+    type: str = ""
+    enabled: bool
+    healthy: bool
+    capabilities: list[str]
+    priority: int
+    is_fallback: bool
+    last_check: float | None = None
+    latency_ms: float | None = None
+    error: str | None = None
+    requests_today: int = 0
+    failures_today: int = 0
+
+
+class HistoryEntry(BaseModel):
+    """Search history entry."""
+    id: str
+    query: str
+    provider: str
+    total: int
+    latency_ms: float
+    timestamp: str
+    results: list[SearchResult] | None = None
