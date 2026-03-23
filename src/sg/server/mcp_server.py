@@ -55,6 +55,9 @@ class MCPServer:
         self.config = config
         self.base_url = f"http://127.0.0.1:{port}"
 
+        # Ensure daemon is running before setting up tools
+        ensure_gateway_running(port, config)
+
         # Import FastMCP lazily to avoid import overhead
         from fastmcp import FastMCP
 
