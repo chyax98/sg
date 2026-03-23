@@ -1,0 +1,250 @@
+"""Executor — unified failover execution with circuit breaker + round-robin."""
+
+import asyncio
+import logging
+import random
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from ..models.config import ExecutorConfig, Strategy
+from ..providers.base import BaseProvider, ProviderCapabilityError
+from ..providers.registry import ProviderRegistry
+from .circuit_breaker import CircuitBreaker, FailureType
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProviderMetrics:
+    requests: int = 0
+    successes: int = 0
+    failures: int = 0
+    total_latency_ms: float = 0
+
+    @property
+    def avg_latency_ms(self) -> float:
+        return self.total_latency_ms / self.successes if self.successes else 0
+
+    @property
+    def success_rate(self) -> float:
+        return (self.successes / self.requests * 100) if self.requests else 100
+
+
+def _classify_error(e: Exception) -> str:
+    """Classify an exception into a failure type for the circuit breaker."""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code in (401, 403):
+            return FailureType.AUTH
+        if code == 429:
+            return FailureType.QUOTA
+        if code >= 500:
+            return FailureType.TRANSIENT
+    # Check error message for common patterns
+    msg = str(e).lower()
+    if "unauthorized" in msg or "forbidden" in msg or "invalid api key" in msg:
+        return FailureType.AUTH
+    if "rate limit" in msg or "quota" in msg or "exceeded" in msg:
+        return FailureType.QUOTA
+    return FailureType.TRANSIENT
+
+
+class Executor:
+    """Provider selection + failover + circuit breaker + metrics.
+
+    Strategies:
+      - round_robin: rotate start position across healthy providers, failover on error
+      - failover: always start from highest priority, failover on error
+      - random: random order, failover on error
+    """
+
+    def __init__(self, config: ExecutorConfig, registry: ProviderRegistry):
+        self.config = config
+        self.registry = registry
+        self._breakers: dict[str, CircuitBreaker] = {}
+        self._metrics: dict[str, ProviderMetrics] = {}
+        self._rr_index = 0  # round-robin counter
+
+    def _breaker(self, name: str) -> CircuitBreaker:
+        if name not in self._breakers:
+            cb = self.config.circuit_breaker
+            hc = self.config.health_check
+            self._breakers[name] = CircuitBreaker(
+                failure_threshold=hc.failure_threshold,
+                base_timeout=cb.base_timeout,
+                multiplier=cb.multiplier,
+                max_timeout=cb.max_timeout,
+                success_threshold=hc.success_threshold,
+                quota_timeout=cb.quota_timeout,
+                auth_timeout=cb.auth_timeout,
+            )
+        return self._breakers[name]
+
+    def _metrics_for(self, name: str) -> ProviderMetrics:
+        if name not in self._metrics:
+            self._metrics[name] = ProviderMetrics()
+        return self._metrics[name]
+
+    async def _try_provider(
+        self,
+        name: str,
+        provider: BaseProvider,
+        operation: Callable[[BaseProvider], Any],
+    ) -> tuple[bool, Any, Exception | None]:
+        """Run one provider attempt and update breaker/metrics."""
+        breaker = self._breaker(name)
+        metrics = self._metrics_for(name)
+
+        try:
+            timeout_s = provider.timeout / 1000
+            start = time.perf_counter()
+            async with asyncio.timeout(timeout_s):
+                result = await operation(provider)
+            latency = (time.perf_counter() - start) * 1000
+
+            breaker.record_success()
+            metrics.requests += 1
+            metrics.successes += 1
+            metrics.total_latency_ms += latency
+            return True, result, None
+        except ProviderCapabilityError as e:
+            logger.info(f"Provider {name} skipped: {e}")
+            return False, None, e
+        except Exception as e:
+            failure_type = _classify_error(e)
+            breaker.record_failure(failure_type)
+            metrics.requests += 1
+            metrics.failures += 1
+
+            disabled_hours = breaker.current_timeout_seconds / 3600
+            if failure_type == FailureType.AUTH:
+                logger.error(
+                    f"Provider {name}: auth failure, disabled for {disabled_hours:.0f}h"
+                )
+            elif failure_type == FailureType.QUOTA:
+                logger.warning(
+                    f"Provider {name}: quota exceeded, disabled for {disabled_hours:.0f}h"
+                )
+            else:
+                logger.warning(f"Provider {name} failed: {e}")
+            return False, None, e
+
+    def _candidates(self, capability: str, provider: str | None = None) -> list[str]:
+        """Build ordered list of provider names to try."""
+        if provider:
+            return [provider]
+
+        providers = self.registry.get_by_capability(capability)
+        available = [p for p in providers if self._breaker(p.name).allow_request()]
+
+        if not available:
+            # All breakers open — check fallback
+            fallback = self.registry.get_fallback()
+            if fallback and self._breaker(fallback.name).allow_request():
+                return [fallback.name]
+            return []
+
+        if self.config.strategy == Strategy.ROUND_ROBIN:
+            # Rotate starting position to spread load across providers
+            n = len(available)
+            idx = self._rr_index % n
+            self._rr_index += 1
+            rotated = available[idx:] + available[:idx]
+            names = [p.name for p in rotated]
+        elif self.config.strategy == Strategy.RANDOM:
+            shuffled = list(available)
+            random.shuffle(shuffled)
+            names = [p.name for p in shuffled]
+        else:
+            # FAILOVER: priority order (already sorted)
+            names = [p.name for p in available]
+
+        # Append fallback at end if not already included
+        fallback = self.registry.get_fallback()
+        if fallback and fallback.name not in names:
+            if self._breaker(fallback.name).allow_request():
+                names.append(fallback.name)
+
+        return names
+
+    async def execute(
+        self,
+        capability: str,
+        operation: Callable[[BaseProvider], Any],
+        provider: str | None = None,
+    ) -> Any:
+        """Execute operation with failover across providers."""
+        candidates = self._candidates(capability, provider)
+        if not candidates:
+            raise RuntimeError(f"No providers available for '{capability}'")
+
+        max_attempts = min(len(candidates), self.config.failover.max_attempts)
+        last_error: Exception | None = None
+
+        for name in candidates[:max_attempts]:
+            p = self.registry.get(name)
+            if not p:
+                continue
+
+            ok, result, error = await self._try_provider(name, p, operation)
+            if ok:
+                return result
+            last_error = error
+
+        # Try fallback as last resort
+        fallback = self.registry.get_fallback()
+        if fallback and fallback.name not in candidates[:max_attempts]:
+            ok, result, error = await self._try_provider(fallback.name, fallback, operation)
+            if ok:
+                logger.info(f"Fallback to {fallback.name} succeeded")
+                return result
+            logger.error(f"Fallback {fallback.name} also failed: {error}")
+            last_error = error
+
+        raise RuntimeError(f"All providers failed. Last error: {last_error}")
+
+    def get_metrics(self) -> dict[str, dict[str, Any]]:
+        result = {}
+        for name, m in self._metrics.items():
+            breaker = self._breaker(name)
+            bs = breaker.status()
+            result[name] = {
+                "requests": m.requests,
+                "successes": m.successes,
+                "failures": m.failures,
+                "avg_latency_ms": round(m.avg_latency_ms, 1),
+                "success_rate": round(m.success_rate, 1),
+                "circuit_breaker": bs["state"],
+                "disabled_seconds_remaining": bs["remaining_disabled_seconds"],
+                "trip_count": bs["trip_count"],
+                "last_failure_type": bs["last_failure_type"],
+            }
+        return result
+
+    def get_breaker_state(self, name: str) -> str:
+        return self._breaker(name).state
+
+    def get_breaker_status(self, name: str) -> dict:
+        return self._breaker(name).status()
+
+    async def run_health_checks(self) -> dict[str, Any]:
+        """Explicit health check. Resets breakers for healthy providers."""
+        healthy = []
+        unhealthy = []
+
+        for name, provider in self.registry.all().items():
+            try:
+                is_healthy, error = await provider.health_check()
+                if is_healthy:
+                    self._breaker(name).reset()
+                    healthy.append(name)
+                else:
+                    unhealthy.append({"name": name, "error": error})
+            except Exception as e:
+                unhealthy.append({"name": name, "error": str(e)})
+
+        return {"healthy": healthy, "unhealthy": unhealthy}
