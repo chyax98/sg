@@ -137,7 +137,12 @@ class Executor:
             return False, None, e
 
     def _candidate_groups(self, capability: str, provider: str | None = None) -> list[str]:
-        """Build ordered provider-group list to try."""
+        """Build ordered provider-group list to try.
+
+        Provider groups are ordered by absolute priority (lower number = higher priority).
+        The strategy (round_robin/random) only affects instance selection within a group,
+        NOT the group order itself.
+        """
         if provider:
             if self.registry.get(provider):
                 group_name = self.registry.group_for_instance(provider)
@@ -146,15 +151,16 @@ class Executor:
                 return [provider]
             return []
 
+        # Get groups ordered by priority (absolute priority, no rotation)
         groups = self.registry.get_group_order(capability)
-        if self.config.strategy == Strategy.ROUND_ROBIN and groups:
-            with self._rr_lock:
-                idx = self._rr_index % len(groups)
-                self._rr_index += 1
-            groups = groups[idx:] + groups[:idx]
-        elif self.config.strategy == Strategy.RANDOM:
+
+        # Strategy only affects instance selection within groups, not group order
+        # Random strategy can shuffle groups for load balancing if desired
+        if self.config.strategy == Strategy.RANDOM:
             groups = list(groups)
             random.shuffle(groups)
+
+        # Add fallback group at the end
         fallback_group = self.registry.get_fallback_group(capability)
         if fallback_group and fallback_group not in groups:
             groups.append(fallback_group)
