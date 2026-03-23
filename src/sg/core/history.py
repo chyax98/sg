@@ -82,7 +82,7 @@ class SearchHistory:
 
     async def get(self, entry_id: str) -> HistoryEntry | None:
         """Get full entry by ID.
-        
+
         entry_id can be either:
         - A full file path (as returned by record)
         - Just the entry ID (filename without extension)
