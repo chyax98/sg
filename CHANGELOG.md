@@ -5,6 +5,31 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.0] - 2026-03-24
+
+首个正式版本发布！🎉
+
+### 核心特性
+
+- **8 种搜索 Provider**：Tavily, Exa, Brave, You.com, Firecrawl, Jina, SearXNG, DuckDuckGo
+- **Provider Group + Instance Pool**：同一 provider 类型下可配置多个实例
+- **Circuit Breaker**：三态熔断器自动熔断与恢复
+- **两层路由**：Provider Group 选择 + Instance 选择
+- **多接口**：HTTP REST API + MCP 协议（stdio + SSE）+ CLI + Python SDK
+- **搜索历史**：文件系统异步存储，支持查询回溯
+
+### MCP 集成
+
+- **SSE 模式**：持续运行的 gateway，多客户端共享
+- **stdio 模式**：临时使用，每次连接启动新实例
+- 支持 Claude Desktop 和 Claude Code
+
+### 开发工具
+
+- Makefile 快速开发命令
+- 开发模式安装（代码修改自动生效）
+- 完整的测试套件（116 个测试）
+
 ## [Unreleased]
 
 ### 新增
