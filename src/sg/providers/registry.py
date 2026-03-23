@@ -227,10 +227,7 @@ class ProviderRegistry:
                     capabilities=provider.capabilities,
                     search_features=getattr(provider, "search_features", []),
                     priority=provider.priority,
-                    is_fallback=bool(
-                        self._config.get(group_name)
-                        and self._config[group_name].fallback_for
-                    ),
+                    fallback_for=self._config[group_name].fallback_for if self._config.get(group_name) else [],
                 )
             )
         return result

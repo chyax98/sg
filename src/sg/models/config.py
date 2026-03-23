@@ -109,7 +109,6 @@ class MCPConfig(StrictConfigModel):
 class HistoryConfig(StrictConfigModel):
     """Search history configuration."""
 
-    enabled: bool = True
     dir: str = "~/.sg/history"
     max_entries: int = 10000
 

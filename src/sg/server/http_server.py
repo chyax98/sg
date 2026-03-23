@@ -45,12 +45,23 @@ class ResearchBody(BaseModel):
     provider: str | None = None
 
 
+class SearchBatchBody(BaseModel):
+    queries: list[str]
+    provider: str | None = None
+    max_results: int = Field(default=10, ge=1, le=50)
+    include_domains: list[str] = Field(default_factory=list)
+    exclude_domains: list[str] = Field(default_factory=list)
+    time_range: str | None = None
+    search_depth: str = "basic"
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProviderBody(BaseModel):
     type: str
     enabled: bool = True
     priority: int = 10
     selection: InstanceSelection = InstanceSelection.RANDOM
-    is_fallback: bool = False
+    fallback_for: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     defaults: ProviderDefaultsConfig = Field(default_factory=ProviderDefaultsConfig)
 
@@ -115,6 +126,23 @@ class HTTPServer:
                 return result.model_dump()
             except Exception as e:
                 logger.error(f"Search error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/search/batch")
+        async def search_batch(body: SearchBatchBody):
+            try:
+                results = await gw.search_batch(
+                    queries=body.queries, provider=body.provider,
+                    max_results=body.max_results,
+                    include_domains=body.include_domains,
+                    exclude_domains=body.exclude_domains,
+                    time_range=body.time_range,
+                    search_depth=body.search_depth,
+                    extra=body.extra,
+                )
+                return [r.model_dump() for r in results]
+            except Exception as e:
+                logger.error(f"Batch search error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post("/extract")
@@ -192,7 +220,7 @@ class HTTPServer:
                 "enabled": body.enabled,
                 "priority": body.priority,
                 "selection": body.selection.value,
-                "is_fallback": body.is_fallback,
+                "fallback_for": body.fallback_for,
                 "tags": body.tags,
                 "defaults": body.defaults.model_dump(),
                 "instances": raw.get("providers", {}).get(provider_id, {}).get("instances", []),

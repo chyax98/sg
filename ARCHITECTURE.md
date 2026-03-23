@@ -48,6 +48,21 @@ CLI / HTTP / MCP / SDK
 - Applies per-instance circuit breakers and request timeouts.
 - Falls back to the configured fallback group when normal groups fail.
 
+Current execution semantics:
+
+- No `provider` hint:
+  - build the group list from capability + `executor.strategy`
+  - try up to `failover.max_attempts` normal groups
+  - then try fallback group if configured
+- `provider=<group-name>`:
+  - restrict execution to that group
+  - still fail over across instances inside the group
+  - if the group fails, fallback group is still allowed
+- `provider=<instance-id>`:
+  - pin the request to that exact instance
+  - if it fails, the request can still fall back to the fallback group
+  - sibling instances in the same group are not used in this mode
+
 ### ProviderRegistry
 
 - Builds provider instances from grouped config.
@@ -106,3 +121,19 @@ Rules:
 - A failed provider group does not stop the request if other groups can serve the same capability.
 - Fallback remains available even when normal providers are exhausted or temporarily disabled.
 - Old config formats are not supported.
+
+## Default Strategy
+
+The current default is tuned for availability with pooled accounts:
+
+- Outer layer: `executor.strategy = round_robin`
+- Inner layer: `providers.<group>.selection = random`
+- Breaker scope: per instance
+- Fallback: one explicit fallback group, or auto-added `duckduckgo` if none is configured
+
+This gives:
+
+- cross-provider traffic spreading
+- within-provider account spreading
+- automatic isolation of bad instances
+- predictable fallback when normal capacity is unavailable

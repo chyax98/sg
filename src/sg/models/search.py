@@ -44,6 +44,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
     total: int
     latency_ms: float
+    result_file: str | None = None  # path to history file, set after recording
 
 
 class ExtractRequest(BaseModel):
@@ -95,7 +96,7 @@ class ProviderStatus(BaseModel):
     capabilities: list[str]
     search_features: list[str] = Field(default_factory=list)
     priority: int
-    is_fallback: bool
+    fallback_for: list[str] = Field(default_factory=list)
     circuit_breaker: str = "closed"
     latency_ms: float | None = None
     error: str | None = None

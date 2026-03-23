@@ -93,7 +93,7 @@ POST /search
 }
 ```
 
-`provider` 可选，不指定则按优先级自动选择。`time_range`: `day`, `week`, `month`, `year`。
+`provider` 可选，可以传 group 名或 instance 名；不指定时按当前 `executor.strategy` 自动选择。`time_range`: `day`, `week`, `month`, `year`。
 
 ### 内容提取
 
@@ -232,6 +232,65 @@ async with AsyncSearchClient() as client:
 - `circuit_breaker.quota_timeout`: 配额耗尽时禁用多久
 - `circuit_breaker.auth_timeout`: 认证失败时禁用多久
 - `failover.max_attempts`: 一次请求最多尝试多少个 provider
+
+## 当前调度策略
+
+当前实现是两层调度：
+
+1. 先在 provider group 之间选择
+2. 再在 group 内的 instances 之间选择
+
+### 外层：provider group 调度
+
+- `executor.strategy = failover`
+  - 按 group `priority` 固定顺序尝试
+- `executor.strategy = round_robin`
+  - 每次请求轮换 group 起始位置
+- `executor.strategy = random`
+  - 每次请求打乱 group 顺序
+
+### 内层：group 内实例调度
+
+- `selection = random`
+  - 从当前 group 的健康实例中随机选一个
+- `selection = round_robin`
+  - 在当前 group 的实例间轮询
+- `selection = priority`
+  - 优先选择实例 `priority` 最小的那个
+
+### 失败切换逻辑
+
+- 某个实例失败后，会优先尝试当前 group 内的其他健康实例
+- 当前 group 没有可用实例后，才切到下一个 provider group
+- 正常 group 都失败后，最后再尝试 fallback group
+- breaker 是实例级的，不是 provider 级的
+
+### 指定 provider 的语义
+
+- 如果 `provider` 传的是 group 名
+  - 只在这个 group 内尝试
+  - 该 group 失败后再走 fallback group
+- 如果 `provider` 传的是 instance 名
+  - 只尝试这个 instance
+  - 失败后直接进入 fallback group
+- 如果不传 `provider`
+  - 按全局调度策略正常选择
+
+### 当前默认理解
+
+- 外层 `round_robin`
+  - 在不同 provider 类型之间分散流量
+- 内层 `random`
+  - 在同一 provider 的多个账号之间随机分摊请求
+- `failover.max_attempts = 3`
+  - 一次请求最多尝试 3 个正常 group，之后再考虑 fallback
+
+### 当前未做的事
+
+- 不做智能 provider 推荐
+- 不做结果质量打分后再换 provider
+- 不把空结果自动视为失败
+- 不支持旧配置格式
 
 ## Provider 对比
 

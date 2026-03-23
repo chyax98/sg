@@ -17,7 +17,6 @@ class SearchHistory:
     """Filesystem-backed search history with async I/O."""
 
     def __init__(self, config: HistoryConfig):
-        self.enabled = config.enabled
         self.dir = Path(config.dir).expanduser()
         self.max_entries = config.max_entries
 
@@ -26,11 +25,8 @@ class SearchHistory:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    async def record(self, request: SearchRequest, response: SearchResponse) -> str | None:
-        """Save search result. Returns entry ID."""
-        if not self.enabled:
-            return None
-
+    async def record(self, request: SearchRequest, response: SearchResponse) -> str:
+        """Save search result. Returns absolute file path."""
         now = datetime.now()
         entry_id = f"{now.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         month_dir = self._ensure_dir(now.strftime("%Y-%m"))
@@ -48,7 +44,7 @@ class SearchHistory:
         filepath = month_dir / f"{entry_id}.json"
         content = json.dumps(entry, ensure_ascii=False, indent=2)
         await asyncio.to_thread(filepath.write_text, content)
-        return entry_id
+        return str(filepath)
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[HistoryEntry]:
         """List recent entries (without full results)."""
