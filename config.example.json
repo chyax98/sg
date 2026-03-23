@@ -1,0 +1,13 @@
+{
+  "server": {
+    "port": 8100
+  },
+  "providers": {
+    "duckduckgo": {
+      "type": "duckduckgo",
+      "enabled": true,
+      "priority": 100,
+      "fallback_for": ["search"]
+    }
+  }
+}

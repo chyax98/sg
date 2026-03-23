@@ -45,6 +45,8 @@ htmlcov/
 dmypy.json
 
 # Project specific
+config.json
+config.json.backup
 config.json.bak
 *.bak
 .history/
