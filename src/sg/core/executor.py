@@ -57,10 +57,13 @@ def _classify_error(e: Exception) -> str:
 class Executor:
     """Provider selection + failover + circuit breaker + metrics.
 
-    Strategies:
-      - round_robin: rotate start position across healthy providers, failover on error
-      - failover: always start from highest priority, failover on error
-      - random: random order, failover on error
+    Architecture:
+      - Provider groups are ALWAYS selected in strict priority order (lowest number = highest priority)
+      - Only failover to next priority group on failure
+      - Load balancing happens at the instance level within each group via provider.selection:
+        * priority: always select highest priority instance
+        * round_robin: rotate among instances in priority order
+        * random: random selection among available instances
     """
 
     def __init__(self, config: ExecutorConfig, registry: ProviderRegistry):

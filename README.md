@@ -248,7 +248,7 @@ POST /search
 }
 ```
 
-`provider` 可选，可以传 group 名或 instance 名；不指定时按当前 `executor.strategy` 自动选择。`time_range`: `day`, `week`, `month`, `year`。
+`provider` 可选，可以传 group 名或 instance 名；不指定时按 priority 自动选择最高优先级的 provider。`time_range`: `day`, `week`, `month`, `year`。
 
 ### 内容提取
 
@@ -359,7 +359,6 @@ async with AsyncSearchClient() as client:
     }
   },
   "executor": {
-    "strategy": "round_robin",
     "health_check": { "failure_threshold": 3, "success_threshold": 2 },
     "circuit_breaker": {
       "base_timeout": 3600,
@@ -377,75 +376,66 @@ async with AsyncSearchClient() as client:
 **说明**：
 - `providers.<name>`: provider group，共享类型和通用配置
 - `instances`: 该 provider 下的多个具体实例
-- `selection`: provider 内实例选择策略，默认 `random`
-- `priority`: provider group 的全局优先级，数值越小越优先
+- `selection`: provider 内实例选择策略（`random` / `round_robin` / `priority`），默认 `random`
+- `priority`: provider group 的全局优先级，**数值越小优先级越高**
 - `instances[].priority`: 仅用于 provider 内 `priority` 选择策略
-- `is_fallback`: 兜底 provider group，所有其他 provider 都失败后使用
-- `executor.strategy`: 默认 `round_robin`，在健康 provider 间轮询分摊请求
+- `fallback_for`: 兜底 provider group，所有其他 provider 都失败后使用
 - `circuit_breaker.base_timeout`: 第一次熔断多久后允许探测
 - `circuit_breaker.multiplier`: 连续熔断时的退避倍数
-- `circuit_breaker.quota_timeout`: 配额耗尽时禁用多久
-- `circuit_breaker.auth_timeout`: 认证失败时禁用多久
-- `failover.max_attempts`: 一次请求最多尝试多少个 provider
+- `circuit_breaker.quota_timeout`: 配额耗尽时禁用多久（429 错误）
+- `circuit_breaker.auth_timeout`: 认证失败时禁用多久（401/403 错误）
+- `failover.max_attempts`: 一次请求最多尝试多少个 provider group
 
-## 当前调度策略
+## 路由架构
 
-当前实现是两层调度：
+Search Gateway 使用**两层路由架构**：
 
-1. 先在 provider group 之间选择
-2. 再在 group 内的 instances 之间选择
+### 第一层：Provider Group 选择
 
-### 外层：provider group 调度
+- **严格按 priority 排序**（数字越小优先级越高）
+- 总是从最高优先级的 Group 开始
+- 失败时自动 failover 到下一个优先级的 Group
+- 最多尝试 `failover.max_attempts` 个 Group
 
-- `executor.strategy = failover`
-  - 按 group `priority` 固定顺序尝试
-- `executor.strategy = round_robin`
-  - 每次请求轮换 group 起始位置
-- `executor.strategy = random`
-  - 每次请求打乱 group 顺序
+**示例：**
+```json
+{
+  "providers": {
+    "exa": { "priority": 1 },      // 最高优先级，总是先尝试
+    "tavily": { "priority": 2 },   // 次优先级，exa 失败时才用
+    "youcom": { "priority": 4 },   // 更低优先级
+    "duckduckgo": {
+      "priority": 100,
+      "fallback_for": ["search"]   // 兜底，所有其他都失败时使用
+    }
+  }
+}
+```
 
-### 内层：group 内实例调度
+### 第二层：Instance 选择（Group 内负载均衡）
 
-- `selection = random`
-  - 从当前 group 的健康实例中随机选一个
-- `selection = round_robin`
-  - 在当前 group 的实例间轮询
-- `selection = priority`
-  - 优先选择实例 `priority` 最小的那个
+在同一个 Provider Group 内，使用 `provider.selection` 策略选择具体的 Instance：
 
-### 失败切换逻辑
+- **`priority`**：总是选择最高优先级（priority 最小）的 Instance
+- **`round_robin`**：按 priority 排序后轮询，分散负载
+- **`random`**：随机选择可用的 Instance
 
-- 某个实例失败后，会优先尝试当前 group 内的其他健康实例
-- 当前 group 没有可用实例后，才切到下一个 provider group
-- 正常 group 都失败后，最后再尝试 fallback group
-- breaker 是实例级的，不是 provider 级的
-
-### 指定 provider 的语义
-
-- 如果 `provider` 传的是 group 名
-  - 只在这个 group 内尝试
-  - 该 group 失败后再走 fallback group
-- 如果 `provider` 传的是 instance 名
-  - 只尝试这个 instance
-  - 失败后直接进入 fallback group
-- 如果不传 `provider`
-  - 按全局调度策略正常选择
-
-### 当前默认理解
-
-- 外层 `round_robin`
-  - 在不同 provider 类型之间分散流量
-- 内层 `random`
-  - 在同一 provider 的多个账号之间随机分摊请求
-- `failover.max_attempts = 3`
-  - 一次请求最多尝试 3 个正常 group，之后再考虑 fallback
-
-### 当前未做的事
-
-- 不做智能 provider 推荐
-- 不做结果质量打分后再换 provider
-- 不把空结果自动视为失败
-- 不支持旧配置格式
+**示例：**
+```json
+{
+  "providers": {
+    "tavily": {
+      "priority": 2,
+      "selection": "round_robin",  // Group 内轮询负载均衡
+      "instances": [
+        { "id": "tavily-1", "priority": 1, "api_key": "key1" },
+        { "id": "tavily-2", "priority": 2, "api_key": "key2" },
+        { "id": "tavily-3", "priority": 3, "api_key": "key3" }
+      ]
+    }
+  }
+}
+```
 
 ## Provider 对比
 

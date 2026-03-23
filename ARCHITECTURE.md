@@ -88,7 +88,7 @@ async def research(topic: str, depth="auto", **kwargs) -> ResearchResponse
 ### Executor
 
 **职责：**
-- 实现路由策略（failover、round_robin、random）
+- 按优先级选择 Provider Group
 - 管理每实例熔断器
 - 处理跨 provider 分组的故障转移
 - 应用能力特定的 fallback
@@ -96,24 +96,26 @@ async def research(topic: str, depth="auto", **kwargs) -> ResearchResponse
 
 **路由逻辑：**
 
-1. **无 provider 提示：**
-   - 根据能力 + 策略构建分组列表
+Provider Groups 始终按照 **priority 严格排序**（数字越小优先级越高）：
+
+1. **无 provider 指定：**
+   - 从最高优先级（priority 最小）的 Group 开始
    - 尝试最多 `max_attempts` 个分组
+   - 失败时 failover 到下一个优先级的 Group
    - 如果全部失败则回退到 fallback 分组
 
-2. **指定 provider：**
+2. **指定 provider group：**
    - 尝试指定的 provider 分组
    - 在组内实例间故障转移
    - 如果分组失败则回退到 fallback 分组
 
-3. **指定实例：**
+3. **指定具体实例：**
    - 固定到确切实例
    - 如果实例失败则回退到 fallback 分组
 
-**策略：**
-- `failover`：总是从最高优先级开始
-- `round_robin`：轮询分组以分散负载（线程安全）
-- `random`：随机分组选择
+**两层架构：**
+- **第一层（Group 选择）**：严格按 priority 排序，失败时 failover
+- **第二层（Instance 选择）**：在 Group 内使用 `provider.selection` 策略负载均衡
 
 ### ProviderRegistry
 
@@ -314,7 +316,6 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
 ### Executor 配置
 ```json
 {
-  "strategy": "round_robin",  // failover | round_robin | random
   "health_check": {
     "failure_threshold": 3,
     "success_threshold": 2
@@ -327,7 +328,7 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
     "auth_timeout": 604800    // 401/403 错误 7 天
   },
   "failover": {
-    "max_attempts": 3
+    "max_attempts": 3         // 最多尝试 3 个 provider group
   }
 }
 ```
