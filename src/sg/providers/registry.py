@@ -24,6 +24,7 @@ def _register_builtins():
     from .jina import JinaReaderProvider
     from .searxng import SearXNGProvider
     from .tavily import TavilyProvider
+    from .xcrawl import XcrawlProvider
     from .youcom import YouComProvider
 
     for cls in (
@@ -35,6 +36,7 @@ def _register_builtins():
         JinaReaderProvider,
         FirecrawlProvider,
         YouComProvider,
+        XcrawlProvider,
     ):
         BUILTIN_PROVIDERS[cls.info.type] = cls
 

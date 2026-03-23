@@ -29,6 +29,7 @@ class MCPServer:
             exclude_domains: list[str] | None = None,
             time_range: str | None = None,
             search_depth: str = "basic",
+            extra: dict | None = None,
         ) -> str:
             """Search the web using multiple search engines with automatic failover.
 
@@ -44,7 +45,7 @@ class MCPServer:
 
             Args:
                 query: Search query string (e.g., "Python async programming 2026")
-                provider: Optional provider name to prefer (tavily, brave, exa, youcom, searxng, duckduckgo)
+                provider: Optional provider name to prefer (tavily, brave, exa, youcom, searxng, duckduckgo, xcrawl)
                          If not specified, uses automatic provider selection with failover
                 max_results: Maximum number of results to return (default 10, max varies by provider)
                 include_domains: List of domains to restrict results to (e.g., ["python.org", "github.com"])
@@ -55,6 +56,8 @@ class MCPServer:
                            Only supported by some providers
                 search_depth: Search thoroughness - "basic" (faster) or "advanced" (more comprehensive)
                              Only supported by some providers (Tavily)
+                extra: Extra parameters for specific providers (e.g., {"location": "CN", "language": "zh"})
+                       Supported params vary by provider - unsupported params are ignored
 
             Returns:
                 A string containing:
@@ -84,6 +87,7 @@ class MCPServer:
                 exclude_domains=exclude_domains or [],
                 time_range=time_range,
                 search_depth=search_depth,
+                extra=extra or {},
             )
 
             path = Path(result.result_file)
@@ -101,6 +105,7 @@ class MCPServer:
         async def extract(
             urls: list[str],
             format: str = "markdown",
+            extra: dict | None = None,
         ) -> str:
             """Extract clean, readable content from web pages.
 
@@ -118,6 +123,8 @@ class MCPServer:
                 urls: List of URLs to extract content from (e.g., ["https://example.com/article"])
                      Can process multiple URLs in a single call
                 format: Output format - "markdown" (default, preserves structure) or "text" (plain text)
+                extra: Extra parameters for specific providers (e.g., {"device": "mobile", "js_render": false})
+                       Supported params vary by provider - unsupported params are ignored
 
             Returns:
                 Extracted content for each URL, formatted as:
@@ -130,7 +137,7 @@ class MCPServer:
             Note: Content is returned directly (not saved to file like search results).
             For very long pages, content may be truncated to first 5000 characters per URL.
             """
-            result = await self.gateway.extract(urls=urls, format=format)
+            result = await self.gateway.extract(urls=urls, format=format, extra=extra or {})
 
             lines = []
             for r in result.results:

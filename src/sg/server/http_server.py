@@ -53,6 +53,7 @@ class ExtractBody(BaseModel):
     provider: str | None = None
     format: str = "markdown"
     extract_depth: str = "basic"
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResearchBody(BaseModel):
@@ -173,6 +174,7 @@ class HTTPServer:
                 result = await gw.extract(
                     urls=body.urls, provider=body.provider,
                     format=body.format, extract_depth=body.extract_depth,
+                    extra=body.extra,
                 )
                 return result.model_dump()
             except Exception as e:

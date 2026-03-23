@@ -10,7 +10,7 @@ import click
 from ._utils import ensure_gateway_running
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli():
     """Search Gateway — unified search with failover."""
     pass
@@ -21,11 +21,60 @@ def cli():
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 @click.option("--log-level", default="INFO", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), help="Log level")
 @click.option("--log-file", default=None, help="Log file path (default: console only)")
-def start(port: int, config: str | None, log_level: str, log_file: str | None):
+@click.option("--daemon", "-d", is_flag=True, help="Run in background (daemon mode)")
+def start(port: int, config: str | None, log_level: str, log_file: str | None, daemon: bool):
     """Start the gateway server."""
     import warnings
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
     warnings.filterwarnings("ignore")
+
+    # If daemon mode, start in background
+    if daemon:
+        import subprocess
+        from pathlib import Path
+
+        # Default log file for daemon mode
+        if not log_file:
+            log_dir = Path.home() / ".sg" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = str(log_dir / "gateway.log")
+
+        # Build command
+        cmd = [sys.executable, "-m", "sg.cli", "start", "--port", str(port), "--log-level", log_level, "--log-file", log_file]
+        if config:
+            cmd.extend(["--config", config])
+
+        # Start in background
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        click.echo(f"Starting Search Gateway in background (PID: {process.pid})...")
+        click.echo(f"Port: {port}")
+        click.echo(f"Log file: {log_file}")
+
+        # Wait a bit to check if it started successfully
+        import time
+        time.sleep(2)
+
+        import httpx
+        try:
+            resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=2.0)
+            if resp.status_code == 200:
+                click.echo(f"\n✓ Gateway started successfully!")
+                click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
+                click.echo(f"  Web UI:    http://127.0.0.1:{port}")
+                click.echo(f"\n  Commands:  sg status | sg stop | sg web")
+                click.echo(f"  Logs:      tail -f {log_file}\n")
+            else:
+                click.echo(f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True)
+        except Exception:
+            click.echo(f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True)
+
+        return
 
     # Setup logging
     from ._logging import setup_logging
@@ -116,6 +165,7 @@ def _print_result_file(data: dict) -> None:
 @click.option("--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search")
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
+@click.option("--extra", "-e", default=None, help="Extra params as JSON (e.g. '{\"location\":\"CN\"}')")
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
@@ -126,6 +176,7 @@ def search(
     exclude_domains: tuple[str, ...],
     time_range: str | None,
     search_depth: str,
+    extra: str | None,
     port: int,
     config: str | None,
 ):
@@ -135,6 +186,15 @@ def search(
     # Ensure gateway is running, start if needed
     ensure_gateway_running(port, config)
 
+    import json
+    extra_dict = {}
+    if extra:
+        try:
+            extra_dict = json.loads(extra)
+        except json.JSONDecodeError:
+            click.echo(f"Error: Invalid JSON in --extra: {extra}", err=True)
+            sys.exit(1)
+
     payload = {
         "provider": provider,
         "max_results": max,
@@ -142,6 +202,7 @@ def search(
         "exclude_domains": list(exclude_domains),
         "time_range": time_range,
         "search_depth": search_depth,
+        "extra": extra_dict,
     }
 
     try:
@@ -176,18 +237,28 @@ def search(
 @click.argument("urls", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Extract provider")
 @click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "text"]))
+@click.option("--extra", "-e", default=None, help="Extra params as JSON (e.g. '{\"device\":\"mobile\"}')")
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def extract(urls: tuple[str], provider: str | None, format: str, port: int, config: str | None):
+def extract(urls: tuple[str], provider: str | None, format: str, extra: str | None, port: int, config: str | None):
     """Extract content from URLs."""
     import httpx
 
     # Ensure gateway is running, start if needed
     ensure_gateway_running(port, config)
     try:
+        import json
+        extra_dict = {}
+        if extra:
+            try:
+                extra_dict = json.loads(extra)
+            except json.JSONDecodeError:
+                click.echo(f"Error: Invalid JSON in --extra: {extra}", err=True)
+                sys.exit(1)
+
         resp = httpx.post(
             f"http://127.0.0.1:{port}/extract",
-            json={"urls": list(urls), "provider": provider, "format": format},
+            json={"urls": list(urls), "provider": provider, "format": format, "extra": extra_dict},
             timeout=60.0,
         )
         resp.raise_for_status()
