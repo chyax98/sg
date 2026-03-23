@@ -1,4 +1,4 @@
-"""Brave Search provider - Privacy-focused search with operators."""
+"""Brave Search provider — raw httpx (no official SDK)."""
 
 import os
 import time
@@ -7,90 +7,73 @@ from typing import Any
 import httpx
 
 from ..models.search import SearchRequest, SearchResponse, SearchResult
-from .base import SearchProvider
+from .base import ProviderInfo, SearchProvider
 
 
 class BraveProvider(SearchProvider):
-    """Brave Search provider.
+    """Brave Search: privacy-focused with search operators.
 
-    Features:
-    - Privacy-focused search
-    - Rich search operators (site:, filetype:, lang:, etc.)
-    - Web, images, news, videos, local search
-
-    Pricing: Free 2,000/month, Pro from $5/month
+    Free 2,000/month, Pro from $5/month.
     """
 
-    name = "brave"
-    capabilities = ["search", "images", "news", "videos", "local"]
+    info = ProviderInfo(
+        type="brave",
+        display_name="Brave Search",
+        capabilities=("search",),
+        search_features=("include_domains", "exclude_domains", "time_range"),
+    )
 
     BASE_URL = "https://api.search.brave.com/res/v1"
 
-    def __init__(self, api_key: str | None = None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.api_key = api_key or os.environ.get("BRAVE_API_KEY")
-        self.priority = kwargs.get("priority", 12)
-        self.weight = kwargs.get("weight", 3)
         self._client: httpx.AsyncClient | None = None
 
     async def initialize(self) -> bool:
-        """Initialize Brave client."""
-        if not self.api_key:
-            self.healthy = False
+        api_key = self.api_key or os.environ.get("BRAVE_API_KEY")
+        if not api_key:
             return False
-
+        self.api_key = api_key
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,
-            headers={
-                "Accept": "application/json",
-                "X-Subscription-Token": self.api_key,
-            },
-            timeout=30.0,
+            headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+            timeout=self.timeout / 1000,
         )
-        self.healthy = True
         return True
 
     async def shutdown(self) -> None:
-        """Close HTTP client."""
         if self._client:
             await self._client.aclose()
             self._client = None
 
     async def health_check(self) -> tuple[bool, str | None]:
-        """Check API key validity."""
-        if not self.api_key:
-            return (False, "BRAVE_API_KEY not set")
-
-        try:
-            if self._client:
-                resp = await self._client.get("/web/search", params={"q": "test", "count": 1})
-                if resp.status_code == 200:
-                    return (True, None)
-                elif resp.status_code == 401:
-                    return (False, "Invalid API key")
-                else:
-                    return (False, f"HTTP {resp.status_code}")
-        except Exception as e:
-            return (False, str(e))
-
-        return (False, "Client not initialized")
+        if not self._client:
+            return (False, "Not initialized")
+        return (True, None)
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """Execute web search."""
-        start_time = time.time()
-
         if not self._client:
-            raise RuntimeError("Provider not initialized")
+            raise RuntimeError("Not initialized")
+        self.validate_search_request(request)
 
-        # Build query with operators
-        query = self._build_query(request)
+        start = time.perf_counter()
 
-        params: dict[str, Any] = {
-            "q": query,
-            "count": request.max_results,
-        }
+        query = self.apply_domain_operators(
+            request.query,
+            request.include_domains,
+            request.exclude_domains,
+        )
 
-        # Search modifiers
+        params: dict[str, Any] = {"q": query, "count": request.max_results}
+        if request.time_range and not request.extra.get("freshness"):
+            freshness_map = {
+                "day": "pd",
+                "week": "pw",
+                "month": "pm",
+                "year": "py",
+            }
+            if request.time_range in freshness_map:
+                params["freshness"] = freshness_map[request.time_range]
         if request.extra.get("country"):
             params["country"] = request.extra["country"]
         if request.extra.get("search_lang"):
@@ -102,110 +85,18 @@ class BraveProvider(SearchProvider):
         resp.raise_for_status()
         data = resp.json()
 
-        # Parse results
-        results = []
-        for r in data.get("web", {}).get("results", []):
-            results.append(SearchResult(
-                title=r.get("title", ""),
-                url=r.get("url", ""),
-                content=r.get("description", ""),
-                snippet=r.get("description", ""),
-                source=self.name,
-                score=0.0,
-            ))
-
-        latency_ms = (time.time() - start_time) * 1000
-
-        return SearchResponse(
-            query=request.query,
-            provider=self.name,
-            results=results,
-            total=len(results),
-            latency_ms=latency_ms,
-        )
-
-    def _build_query(self, request: SearchRequest) -> str:
-        """Build query with search operators."""
-        query = request.query
-
-        # Add domain filters as operators
-        for domain in request.include_domains:
-            query += f" site:{domain}"
-        for domain in request.exclude_domains:
-            query += f" -site:{domain}"
-
-        # Add extra operators
-        if request.extra.get("filetype"):
-            query += f" filetype:{request.extra['filetype']}"
-        if request.extra.get("intitle"):
-            query += f" intitle:{request.extra['intitle']}"
-
-        return query
-
-    async def search_images(self, query: str, max_results: int = 10) -> SearchResponse:
-        """Search for images."""
-        start_time = time.time()
-
-        if not self._client:
-            raise RuntimeError("Provider not initialized")
-
-        resp = await self._client.get("/images/search", params={
-            "q": query,
-            "count": max_results,
-        })
-        resp.raise_for_status()
-        data = resp.json()
-
-        results = []
-        for r in data.get("results", []):
-            results.append(SearchResult(
+        results = [
+            SearchResult(
                 title=r.get("title", ""),
                 url=r.get("url", ""),
                 content=r.get("description", ""),
                 source=self.name,
-                extra={"image_url": r.get("properties", {}).get("url")},
-            ))
+            )
+            for r in data.get("web", {}).get("results", [])
+        ]
 
-        latency_ms = (time.time() - start_time) * 1000
-
+        latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=query,
-            provider=self.name,
-            results=results,
-            total=len(results),
-            latency_ms=latency_ms,
-        )
-
-    async def search_news(self, query: str, max_results: int = 10) -> SearchResponse:
-        """Search for news."""
-        start_time = time.time()
-
-        if not self._client:
-            raise RuntimeError("Provider not initialized")
-
-        resp = await self._client.get("/news/search", params={
-            "q": query,
-            "count": max_results,
-        })
-        resp.raise_for_status()
-        data = resp.json()
-
-        results = []
-        for r in data.get("results", []):
-            results.append(SearchResult(
-                title=r.get("title", ""),
-                url=r.get("url", ""),
-                content=r.get("description", ""),
-                source=self.name,
-                published_date=r.get("age"),
-            ))
-
-        latency_ms = (time.time() - start_time) * 1000
-
-        return SearchResponse(
-            query=query,
-            provider=self.name,
-            results=results,
-            total=len(results),
-            latency_ms=latency_ms,
+            query=request.query, provider=self.name,
+            results=results, total=len(results), latency_ms=latency,
         )

@@ -1,45 +1,42 @@
-"""You.com provider - High accuracy AI search."""
+"""You.com provider — raw httpx (SDK is beta/auto-generated)."""
 
-import logging
 import os
 import time
 
 import httpx
 
 from ..models.search import SearchRequest, SearchResponse, SearchResult
-from .base import SearchProvider
-
-logger = logging.getLogger(__name__)
+from .base import ProviderInfo, SearchProvider
 
 
 class YouComProvider(SearchProvider):
-    """You.com Search API - High accuracy web search.
+    """You.com: high accuracy AI search (93% SimpleQA).
 
-    Industry-leading 93% accuracy on SimpleQA benchmark.
-    API docs: https://docs.you.com/api-reference/search/v1-search
-    Get key: https://you.com/platform/api-keys
+    API: https://docs.you.com
     """
 
-    name = "youcom"
-    capabilities = ["search"]
+    info = ProviderInfo(
+        type="youcom",
+        display_name="You.com",
+        capabilities=("search",),
+        search_features=("include_domains", "exclude_domains", "time_range"),
+    )
+
     BASE_URL = "https://ydc-index.io"
 
-    def __init__(self, api_key: str | None = None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.api_key = api_key or os.environ.get("YOUCOM_API_KEY", "")
-        self.priority = kwargs.get("priority", 5)  # High priority due to accuracy
+        self._client: httpx.AsyncClient | None = None
 
     async def initialize(self) -> bool:
-        if not self.api_key:
-            logger.warning("You.com: No API key provided")
+        api_key = self.api_key or os.environ.get("YOUCOM_API_KEY")
+        if not api_key:
             return False
+        self.api_key = api_key
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,
+            headers={"X-API-Key": api_key, "Accept": "application/json"},
             timeout=self.timeout / 1000,
-            headers={
-                "X-API-Key": self.api_key,
-                "Accept": "application/json",
-            },
         )
         return True
 
@@ -49,28 +46,32 @@ class YouComProvider(SearchProvider):
             self._client = None
 
     async def health_check(self) -> tuple[bool, str | None]:
-        if not self.api_key:
-            return False, "No API key"
-        try:
-            resp = await self._client.get("/v1/search", params={"query": "test", "count": 1})
-            if resp.status_code == 200:
-                return True, None
-            elif resp.status_code == 403:
-                return False, "API key invalid or rate limited"
-            return False, f"HTTP {resp.status_code}"
-        except Exception as e:
-            return False, str(e)
+        if not self._client:
+            return (False, "Not initialized")
+        return (True, None)
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """Execute search via You.com API."""
+        if not self._client:
+            raise RuntimeError("Not initialized")
+        self.validate_search_request(request)
+
         start = time.perf_counter()
 
-        params = {
-            "query": request.query,
-            "count": request.max_results,
-        }
-
-        # Add language filter if specified
+        query = self.apply_domain_operators(
+            request.query,
+            request.include_domains,
+            request.exclude_domains,
+        )
+        params = {"query": query, "count": request.max_results}
+        if request.time_range:
+            freshness_map = {
+                "day": "day",
+                "week": "week",
+                "month": "month",
+                "year": "year",
+            }
+            if request.time_range in freshness_map:
+                params["freshness"] = freshness_map[request.time_range]
         if request.extra.get("language"):
             params["language"] = request.extra["language"]
 
@@ -79,10 +80,7 @@ class YouComProvider(SearchProvider):
         data = resp.json()
 
         results = []
-        # You.com returns results in results.web array
-        web_results = data.get("results", {}).get("web", [])
-        for item in web_results:
-            # Combine description and snippets for content
+        for item in data.get("results", {}).get("web", []):
             content = item.get("description", "")
             snippets = item.get("snippets", [])
             if snippets:
@@ -93,17 +91,12 @@ class YouComProvider(SearchProvider):
                 title=item.get("title", ""),
                 url=item.get("url", ""),
                 content=content.strip(),
-                snippet=item.get("description", "")[:300] if item.get("description") else "",
-                score=0.0,
                 source=self.name,
                 published_date=item.get("page_age"),
             ))
 
         latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=request.query,
-            provider=self.name,
-            results=results,
-            total=len(results),
-            latency_ms=latency,
+            query=request.query, provider=self.name,
+            results=results, total=len(results), latency_ms=latency,
         )
