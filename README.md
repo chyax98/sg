@@ -20,22 +20,19 @@
 - **运行时配置**: Web UI 可视化管理 + Config API 动态增删 Provider
 - **搜索历史**: 文件系统异步存储，支持查询回溯
 
-## 📚 文档
+## 目录
 
-- **快速开始**
-  - [5 分钟快速开始](docs/quickstart.md) - 最快上手指南
-  - [用户指南](docs/user-guide.md) - 完整使用说明
-  - [MCP 集成](docs/mcp-integration.md) - Claude Desktop/Code 集成
-
-- **设计文档**
-  - [架构设计](ARCHITECTURE.md) - 系统架构和设计原则
-  - [产品蓝图](docs/product-blueprint.md) - 产品定位和目标
-  - [搜索能力矩阵](docs/search-capability-matrix.md) - Provider 能力对比
-
-- **开发文档**
-  - [贡献指南](CONTRIBUTING.md) - 如何参与贡献
-  - [测试手册](docs/testing.md) - 测试用例和方法
-  - [更新日志](CHANGELOG.md) - 版本变更记录
+- [特性](#特性)
+- [快速开始](#快速开始)
+- [MCP 集成](#mcp-集成claude-desktopcode)
+- [CLI 命令](#cli-命令)
+- [HTTP API](#http-api)
+- [Python SDK](#python-sdk)
+- [配置文件](#配置文件)
+- [Provider 对比](#provider-对比)
+- [开发工具](#开发工具)
+- [架构设计](#架构设计)
+- [贡献](#贡献)
 
 ## 快速开始
 
@@ -74,16 +71,23 @@ sg start --port 9000  # 自定义端口
 
 ### MCP 集成（Claude Desktop / Claude Code）
 
-**方式一：SSE 模式（推荐）**
+Search Gateway 提供 MCP (Model Context Protocol) 服务器，可以集成到 Claude Desktop 和 Claude Code 中。
 
-SSE 模式下，gateway 启动一次后持续运行，多个客户端可以共享同一个 gateway 实例，providers 只初始化一次。
+#### 方式一：SSE 模式（推荐）
 
-1. 启动 gateway 服务器（SSE 端点会自动启用）：
+**优势**：Gateway 持续运行，providers 只初始化一次，多个客户端可以共享同一个 gateway 实例。
+
+1. 启动 gateway 服务器：
 ```bash
 sg start
 ```
 
-2. 配置 Claude Desktop/Code 的 `claude_desktop_config.json`：
+2. 找到配置文件：
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+3. 添加配置：
 ```json
 {
   "mcpServers": {
@@ -94,13 +98,11 @@ sg start
 }
 ```
 
-**方式二：stdio 模式**
+4. 重启 Claude Desktop/Code
 
-每次连接都会启动新的 gateway 实例，适合临时使用：
+#### 方式二：stdio 模式
 
-```bash
-sg mcp  # 启动 stdio 模式的 MCP 服务器
-```
+**优势**：简单，无需启动服务器，适合临时使用。
 
 配置 Claude Desktop/Code：
 ```json
@@ -113,6 +115,24 @@ sg mcp  # 启动 stdio 模式的 MCP 服务器
   }
 }
 ```
+
+#### 可用工具
+
+MCP 服务器提供以下工具：
+
+**search** - 搜索网络
+- 参数：`query`（必需）、`provider`、`max_results`、`include_domains`、`exclude_domains`、`time_range`、`search_depth`
+- 返回：文件路径 + 元数据（大小、行数、字数）
+
+**extract** - 提取网页内容
+- 参数：`urls`（必需）、`format`（markdown/text）
+- 返回：提取的内容
+
+**research** - 深度研究
+- 参数：`topic`（必需）、`depth`（mini/pro/auto）
+- 返回：研究报告
+
+**list_providers** - 列出所有 provider 及状态
 
 ### CLI 命令
 
@@ -434,13 +454,37 @@ class MyProvider(SearchProvider):
     # ... 实现方法
 ```
 
+## 架构设计
+
+Search Gateway 采用两层路由架构：
+
+```
+请求 → Executor → Provider Group 选择 → Instance 选择 → 执行
+```
+
+**核心组件**：
+- **Gateway**：配置管理、API 暴露、历史记录
+- **Executor**：路由策略、熔断器管理、故障转移
+- **ProviderRegistry**：Provider 分组管理、实例生命周期
+- **CircuitBreaker**：三态熔断器（CLOSED/OPEN/HALF_OPEN）
+
+**路由策略**：
+- 外层（Provider Group）：failover / round_robin / random
+- 内层（Instance）：random / round_robin / priority
+
+**熔断器**：
+- 作用域：每个 Instance 独立
+- 失败分类：瞬态（指数退避）、配额（24h）、认证（7天）
+
+详细架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 ## 贡献
 
 欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与项目。
 
 ## 许可证
 
-[MIT License](LICENSE) - 详见 LICENSE 文件。
+[MIT License](LICENSE)
 
 ## 致谢
 
