@@ -87,29 +87,14 @@ def stop(port: int):
 
 
 def _print_result_file(data: dict) -> None:
-    """Print result file info with smart suggestions for next steps."""
+    """Print result file info in concise format."""
     path = Path(data["result_file"])
     try:
-        text = path.read_text(encoding="utf-8")
         size_kb = path.stat().st_size / 1024
-        lines = text.count("\n")
-        words = len(text.split())
-
         click.echo(
-            f'query="{data["query"]}" provider={data["provider"]} results={data["total"]}\n'
-            f"file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)"
+            f'query="{data["query"]}" provider={data["provider"]} '
+            f'results={data["total"]} size={size_kb:.1f}KB file={path}'
         )
-
-        # Smart suggestions based on file size
-        if size_kb < 5:
-            click.echo(f"\n💡 Small file - view with: cat {path}")
-        elif size_kb < 50:
-            click.echo("\n💡 Medium file - extract key info:")
-            click.echo(f"   jq '.results[] | {{title, url}}' {path}")
-        else:
-            click.echo("\n💡 Large file - view first 5 results:")
-            click.echo(f"   jq '.results[0:5]' {path}")
-
     except OSError:
         click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
 
