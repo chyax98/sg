@@ -9,7 +9,10 @@ from ..core.executor import Executor
 from ..core.history import SearchHistory
 from ..models.config import GatewayConfig
 from ..models.search import (
-    ExtractRequest, ResearchRequest, SearchRequest, SearchResponse,
+    ExtractRequest,
+    ResearchRequest,
+    SearchRequest,
+    SearchResponse,
 )
 from ..providers.base import ExtractProvider, ResearchProvider, SearchProvider
 from ..providers.registry import ProviderRegistry

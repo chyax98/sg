@@ -4,7 +4,7 @@ import asyncio
 import logging
 import random
 import threading
-from typing import Callable, Type
+from collections.abc import Callable
 
 from ..models.config import ProviderConfig, ProviderInstanceConfig
 from ..models.search import ProviderStatus
@@ -12,7 +12,7 @@ from .base import BaseProvider, ExtractProvider, ResearchProvider, SearchProvide
 
 logger = logging.getLogger(__name__)
 
-BUILTIN_PROVIDERS: dict[str, Type[BaseProvider]] = {}
+BUILTIN_PROVIDERS: dict[str, type[BaseProvider]] = {}
 
 
 def _register_builtins():

@@ -104,10 +104,10 @@ def _print_result_file(data: dict) -> None:
         if size_kb < 5:
             click.echo(f"\n💡 Small file - view with: cat {path}")
         elif size_kb < 50:
-            click.echo(f"\n💡 Medium file - extract key info:")
+            click.echo("\n💡 Medium file - extract key info:")
             click.echo(f"   jq '.results[] | {{title, url}}' {path}")
         else:
-            click.echo(f"\n💡 Large file - view first 5 results:")
+            click.echo("\n💡 Large file - view first 5 results:")
             click.echo(f"   jq '.results[0:5]' {path}")
 
     except OSError:

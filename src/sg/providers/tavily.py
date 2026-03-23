@@ -4,9 +4,14 @@ import os
 import time
 
 from ..models.search import (
-    ExtractRequest, ExtractResponse, ExtractResult,
-    ResearchRequest, ResearchResponse,
-    SearchRequest, SearchResponse, SearchResult,
+    ExtractRequest,
+    ExtractResponse,
+    ExtractResult,
+    ResearchRequest,
+    ResearchResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 from .base import ExtractProvider, ProviderInfo, ResearchProvider, SearchProvider
 

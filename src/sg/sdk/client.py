@@ -1,7 +1,8 @@
 """SDK — Python client for Search Gateway."""
 
-import httpx
 from typing import Any
+
+import httpx
 
 from ..models.search import ExtractResponse, ResearchResponse, SearchResponse
 
