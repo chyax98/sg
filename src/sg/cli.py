@@ -92,6 +92,7 @@ def _print_result_file(data: dict) -> None:
 
 
 @cli.command()
+@click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
 @click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
