@@ -97,6 +97,13 @@ class HTTPServer:
         )
         self._setup_routes()
 
+        # Mount MCP SSE if enabled
+        if gateway.config.mcp.enabled:
+            logger.info("MCP is enabled, setting up SSE endpoint...")
+            self._setup_mcp()
+        else:
+            logger.info("MCP is disabled")
+
     def _setup_routes(self):
         gw = self.gateway
 
@@ -342,3 +349,18 @@ class HTTPServer:
     async def stop(self):
         if self._server:
             self._server.should_exit = True
+
+    def _setup_mcp(self):
+        """Setup MCP SSE endpoint."""
+        from .mcp_server import MCPServer
+
+        self.mcp_server = MCPServer(self.gateway)
+
+        # Create SSE app - this returns a Starlette app with its own lifespan
+        mcp_app = self.mcp_server.mcp.http_app(transport='sse')
+
+        # Mount the MCP SSE app at /mcp
+        # The SSE endpoint will be at /mcp/sse and messages at /mcp/message
+        self.app.mount("/mcp", mcp_app)
+        logger.info("MCP SSE endpoint mounted at /mcp/sse")
+

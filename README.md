@@ -26,20 +26,24 @@
 ### 安装
 
 ```bash
-cd search-gateway
+# 全局安装（推荐）
+uv tool install .
+
+# 或开发模式
 pip install -e .
 ```
 
-### 配置 API Key
+### 配置
 
 ```bash
-# 按需配置，不配置则使用 DuckDuckGo（免费无限制）
-export TAVILY_API_KEY="tvly-xxx"
-export BRAVE_API_KEY="BSAxxx"
-export EXA_API_KEY="xxx"
-export YOUCOM_API_KEY="xxx"
+# 初始化配置文件（创建 ~/.sg/config.json）
+sg init
+
+# 编辑配置文件，添加 API keys
+vim ~/.sg/config.json
 ```
 
+配置文件示例见下方"配置文件"章节。不配置 API keys 时默认使用 DuckDuckGo（免费无限制）。
 
 ### 启动
 
@@ -48,10 +52,46 @@ sg start              # 默认端口 8100
 sg start --port 9000  # 自定义端口
 ```
 
-### MCP 集成（Claude Desktop）
+### MCP 集成（Claude Desktop / Claude Code）
+
+**方式一：SSE 模式（推荐）**
+
+SSE 模式下，gateway 启动一次后持续运行，多个客户端可以共享同一个 gateway 实例，providers 只初始化一次。
+
+1. 启动 gateway 服务器（SSE 端点会自动启用）：
+```bash
+sg start
+```
+
+2. 配置 Claude Desktop/Code 的 `claude_desktop_config.json`：
+```json
+{
+  "mcpServers": {
+    "search-gateway": {
+      "url": "http://127.0.0.1:8100/mcp/sse"
+    }
+  }
+}
+```
+
+**方式二：stdio 模式**
+
+每次连接都会启动新的 gateway 实例，适合临时使用：
 
 ```bash
 sg mcp  # 启动 stdio 模式的 MCP 服务器
+```
+
+配置 Claude Desktop/Code：
+```json
+{
+  "mcpServers": {
+    "search-gateway": {
+      "command": "sg",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
 ### CLI 命令
