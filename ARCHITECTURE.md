@@ -1,78 +1,78 @@
-# Architecture
+# 架构设计
 
-## Overview
+## 概述
 
-Search Gateway is an **AI Harness** for unified search with high availability. It's designed as a tool for AI agents (like Claude) to perform web searches through multiple providers with automatic failover.
+Search Gateway 是一个为 AI 设计的**统一搜索网关**，具备高可用性。它专为 AI 代理（如 Claude）设计，通过多个搜索提供商执行网络搜索，并具备自动故障转移能力。
 
-**Core Design Principles:**
-1. **AI-First**: Results are saved to files, AI reads them on demand
-2. **High Availability**: Multi-provider failover with circuit breakers
-3. **Account Pooling**: Manage multiple free/low-cost API accounts
-4. **Simple Interface**: One stable API across all providers
+**核心设计原则：**
+1. **AI 优先**：结果保存到文件，AI 按需读取
+2. **高可用性**：多提供商故障转移 + 熔断器
+3. **账号池化**：管理多个免费/低成本 API 账号
+4. **简单接口**：跨所有提供商的统一 API
 
-## System Architecture
+## 系统架构
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    Client Interfaces                         │
+│                    客户端接口                                 │
 │  CLI (sg search) │ HTTP API │ MCP Server │ Python SDK       │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      v
 ┌─────────────────────────────────────────────────────────────┐
 │                        Gateway                               │
-│  - Configuration management                                  │
-│  - Provider registry                                         │
-│  - Executor coordination                                     │
-│  - History management (always-on)                            │
+│  - 配置管理                                                   │
+│  - Provider 注册表                                            │
+│  - Executor 协调                                              │
+│  - History 管理（强制开启）                                    │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      v
 ┌─────────────────────────────────────────────────────────────┐
 │                        Executor                              │
-│  Strategy: failover │ round_robin │ random                  │
-│  - Group selection (by capability + strategy)                │
-│  - Instance selection (within group)                         │
-│  - Circuit breaker management (per instance)                 │
-│  - Timeout & retry logic                                     │
-│  - Capability-specific fallback                              │
+│  策略: failover │ round_robin │ random                       │
+│  - 分组选择（按能力 + 策略）                                   │
+│  - 实例选择（组内）                                            │
+│  - 熔断器管理（每实例）                                        │
+│  - 超时 & 重试逻辑                                             │
+│  - 能力特定的 fallback                                         │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      v
 ┌─────────────────────────────────────────────────────────────┐
 │                   ProviderRegistry                           │
-│  - Provider group management                                 │
-│  - Instance lifecycle (init/shutdown)                        │
-│  - Capability routing                                        │
-│  - Fallback group tracking                                   │
+│  - Provider 分组管理                                          │
+│  - 实例生命周期（init/shutdown）                               │
+│  - 能力路由                                                   │
+│  - Fallback 分组追踪                                          │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      v
 ┌─────────────────────────────────────────────────────────────┐
-│                  Provider Instances                          │
+│                  Provider 实例                                │
 │  Tavily │ Exa │ Brave │ You.com │ Firecrawl │ Jina │ ...   │
 └─────────────────────────────────────────────────────────────┘
                      │
                      v
 ┌─────────────────────────────────────────────────────────────┐
-│                    History Storage                           │
+│                    历史记录存储                                │
 │         ~/.sg/history/YYYY-MM/timestamp-uuid.json            │
-│  AI reads files on demand based on size/complexity           │
+│  AI 根据文件大小/复杂度按需读取                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Core Components
+## 核心组件
 
 ### Gateway
 
-**Responsibilities:**
-- Load and manage configuration
-- Initialize provider registry and executor
-- Expose unified API: `search()`, `extract()`, `research()`
-- Record all search results to history files
-- Support config hot-reload
+**职责：**
+- 加载和管理配置
+- 初始化 provider 注册表和 executor
+- 暴露统一 API：`search()`、`extract()`、`research()`
+- 将所有搜索结果记录到历史文件
+- 支持配置热重载
 
-**Key Methods:**
+**核心方法：**
 ```python
 async def search(query, provider=None, max_results=10, **kwargs) -> SearchResponse
 async def search_batch(queries: list[str], **kwargs) -> list[SearchResponse]
@@ -80,50 +80,50 @@ async def extract(urls: list[str], **kwargs) -> ExtractResponse
 async def research(topic: str, depth="auto", **kwargs) -> ResearchResponse
 ```
 
-**History Management:**
-- Every search is saved to `~/.sg/history/YYYY-MM/timestamp-uuid.json`
-- Response includes `result_file` path
-- AI decides whether to read based on file size/complexity
+**历史记录管理：**
+- 每次搜索都保存到 `~/.sg/history/YYYY-MM/timestamp-uuid.json`
+- 响应包含 `result_file` 路径
+- AI 根据文件大小/复杂度决定是否读取
 
 ### Executor
 
-**Responsibilities:**
-- Implement routing strategies (failover, round_robin, random)
-- Manage per-instance circuit breakers
-- Handle failover across provider groups
-- Apply capability-specific fallback
-- Track metrics (success rate, latency, circuit breaker state)
+**职责：**
+- 实现路由策略（failover、round_robin、random）
+- 管理每实例熔断器
+- 处理跨 provider 分组的故障转移
+- 应用能力特定的 fallback
+- 追踪指标（成功率、延迟、熔断器状态）
 
-**Routing Logic:**
+**路由逻辑：**
 
-1. **No provider hint:**
-   - Build group list from capability + strategy
-   - Try up to `max_attempts` groups
-   - Fall back to fallback group if all fail
+1. **无 provider 提示：**
+   - 根据能力 + 策略构建分组列表
+   - 尝试最多 `max_attempts` 个分组
+   - 如果全部失败则回退到 fallback 分组
 
-2. **Provider specified:**
-   - Try specified provider group
-   - Failover across instances within group
-   - Fall back to fallback group if group fails
+2. **指定 provider：**
+   - 尝试指定的 provider 分组
+   - 在组内实例间故障转移
+   - 如果分组失败则回退到 fallback 分组
 
-3. **Instance specified:**
-   - Pin to exact instance
-   - Fall back to fallback group if instance fails
+3. **指定实例：**
+   - 固定到确切实例
+   - 如果实例失败则回退到 fallback 分组
 
-**Strategies:**
-- `failover`: Always start from highest priority
-- `round_robin`: Rotate across groups to spread load (thread-safe)
-- `random`: Random group selection
+**策略：**
+- `failover`：总是从最高优先级开始
+- `round_robin`：轮询分组以分散负载（线程安全）
+- `random`：随机分组选择
 
 ### ProviderRegistry
 
-**Responsibilities:**
-- Build provider instances from config
-- Track provider groups and capabilities
-- Select instances within groups
-- Manage fallback group
+**职责：**
+- 从配置构建 provider 实例
+- 追踪 provider 分组和能力
+- 在分组内选择实例
+- 管理 fallback 分组
 
-**Group Configuration:**
+**分组配置：**
 ```json
 {
   "providers": {
@@ -148,41 +148,41 @@ async def research(topic: str, depth="auto", **kwargs) -> ResearchResponse
 }
 ```
 
-**Instance Selection:**
-- `random`: Random instance (default, spreads load)
-- `round_robin`: Rotate through instances (thread-safe)
-- `priority`: Always pick highest priority available
+**实例选择：**
+- `random`：随机实例（默认，分散负载）
+- `round_robin`：轮询实例（线程安全）
+- `priority`：总是选择最高优先级可用实例
 
-### CircuitBreaker
+### CircuitBreaker（熔断器）
 
-**State Machine:**
+**状态机：**
 ```
-CLOSED ──[failures >= threshold]──> OPEN
-  ^                                   │
-  │                                   │
-  └──[successes >= threshold]── HALF_OPEN
-                                      ^
-                                      │
-                              [timeout expires]
+CLOSED ──[失败次数 >= 阈值]──> OPEN
+  ^                              │
+  │                              │
+  └──[成功次数 >= 阈值]── HALF_OPEN
+                                 ^
+                                 │
+                         [超时时间到期]
 ```
 
-**Failure Classification:**
-- **Transient** (500, timeout): Exponential backoff (1h → 6h → 36h, max 48h)
-- **Quota** (429): Fixed 24h timeout
-- **Auth** (401, 403): Fixed 7 day timeout
+**失败分类：**
+- **瞬态**（500、超时）：指数退避（1h → 6h → 36h，最大 48h）
+- **配额**（429）：固定 24h 超时
+- **认证**（401、403）：固定 7 天超时
 
-**Scope:**
-- Per instance, not per provider type
-- Isolated failures don't poison the whole group
+**作用域：**
+- 每实例，而非每 provider 类型
+- 隔离的失败不会污染整个分组
 
 ### SearchHistory
 
-**Responsibilities:**
-- Save all search results to filesystem
-- Return file path to caller
-- Provide list/get/clear operations
+**职责：**
+- 将所有搜索结果保存到文件系统
+- 向调用者返回文件路径
+- 提供 list/get/clear 操作
 
-**File Structure:**
+**文件结构：**
 ```
 ~/.sg/history/
 ├── 2026-03/
@@ -193,7 +193,7 @@ CLOSED ──[failures >= threshold]──> OPEN
     └── ...
 ```
 
-**File Format:**
+**文件格式：**
 ```json
 {
   "id": "20260323-103045-abc123",
@@ -213,14 +213,14 @@ CLOSED ──[failures >= threshold]──> OPEN
 }
 ```
 
-## Capability-Specific Fallback
+## 能力特定的 Fallback
 
-**Design:**
-- Each provider can specify `fallback_for: ["search", "extract", "research"]`
-- Fallback only applies to specified capabilities
-- Example: DuckDuckGo as fallback for search, but not for extract
+**设计：**
+- 每个 provider 可以指定 `fallback_for: ["search", "extract", "research"]`
+- Fallback 仅适用于指定的能力
+- 示例：DuckDuckGo 作为 search 的 fallback，但不用于 extract
 
-**Configuration:**
+**配置：**
 ```json
 {
   "duckduckgo": {
@@ -230,42 +230,42 @@ CLOSED ──[failures >= threshold]──> OPEN
 }
 ```
 
-**Execution Flow:**
+**执行流程：**
 ```
-1. Try normal providers (by strategy)
-2. If all fail, check fallback_for capability
-3. If capability matches, try fallback provider
-4. If fallback fails, raise error
+1. 尝试正常 providers（按策略）
+2. 如果全部失败，检查 fallback_for 能力
+3. 如果能力匹配，尝试 fallback provider
+4. 如果 fallback 失败，抛出错误
 ```
 
-## Thread Safety
+## 线程安全
 
-**Round Robin Implementation:**
-- Uses `threading.Lock` for counter access
-- Safe for concurrent requests
-- Prevents race conditions in multi-threaded environments
+**Round Robin 实现：**
+- 使用 `threading.Lock` 保护计数器访问
+- 对并发请求安全
+- 防止多线程环境中的竞态条件
 
-**Critical Sections:**
+**关键区域：**
 ```python
-# Executor level (group selection)
+# Executor 层（分组选择）
 with self._rr_lock:
     idx = self._rr_index % len(groups)
     self._rr_index += 1
 
-# Registry level (instance selection)
+# Registry 层（实例选择）
 with self._rr_lock:
     idx = self._rr_index.get(group_name, 0) % len(available)
     self._rr_index[group_name] = idx + 1
 ```
 
-## Batch Search
+## 批量搜索
 
-**Feature:**
-- Execute multiple queries in parallel
-- Each query gets its own history file
-- Return list of file paths
+**功能：**
+- 并行执行多个查询
+- 每个查询获得自己的历史文件
+- 返回文件路径列表
 
-**API:**
+**API：**
 ```python
 # HTTP
 POST /search/batch
@@ -277,7 +277,7 @@ POST /search/batch
 # CLI
 sg search "query1" "query2" "query3"
 
-# Output
+# 输出
 query="query1" provider=exa results=10
 file=/Users/xxx/.sg/history/2026-03/20260323-103045-aaa111.json (12.4KB, 287 lines, 1823 words)
 
@@ -285,21 +285,21 @@ query="query2" provider=tavily results=10
 file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 lines, 1205 words)
 ```
 
-## Configuration Model
+## 配置模型
 
-### Provider Group
+### Provider 分组
 ```json
 {
-  "type": "tavily",           // Provider type
-  "enabled": true,            // Enable/disable group
-  "priority": 1,              // Group priority (lower = higher priority)
-  "selection": "random",      // Instance selection: random | round_robin | priority
-  "fallback_for": [],         // Capabilities this group serves as fallback
-  "tags": [],                 // Optional tags
-  "defaults": {               // Default settings for all instances
+  "type": "tavily",           // Provider 类型
+  "enabled": true,            // 启用/禁用分组
+  "priority": 1,              // 分组优先级（数字越小优先级越高）
+  "selection": "random",      // 实例选择：random | round_robin | priority
+  "fallback_for": [],         // 此分组作为 fallback 的能力
+  "tags": [],                 // 可选标签
+  "defaults": {               // 所有实例的默认设置
     "timeout": 30000
   },
-  "instances": [              // Concrete instances
+  "instances": [              // 具体实例
     {
       "id": "tavily-1",
       "enabled": true,
@@ -311,7 +311,7 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
 }
 ```
 
-### Executor Config
+### Executor 配置
 ```json
 {
   "strategy": "round_robin",  // failover | round_robin | random
@@ -320,11 +320,11 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
     "success_threshold": 2
   },
   "circuit_breaker": {
-    "base_timeout": 3600,     // 1 hour
-    "multiplier": 6.0,        // Exponential backoff
-    "max_timeout": 172800,    // 48 hours
-    "quota_timeout": 86400,   // 24 hours for 429
-    "auth_timeout": 604800    // 7 days for 401/403
+    "base_timeout": 3600,     // 1 小时
+    "multiplier": 6.0,        // 指数退避
+    "max_timeout": 172800,    // 48 小时
+    "quota_timeout": 86400,   // 429 错误 24 小时
+    "auth_timeout": 604800    // 401/403 错误 7 天
   },
   "failover": {
     "max_attempts": 3
@@ -332,7 +332,7 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
 }
 ```
 
-### History Config
+### History 配置
 ```json
 {
   "dir": "~/.sg/history",
@@ -340,18 +340,18 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
 }
 ```
 
-## Runtime Guarantees
+## 运行时保证
 
-1. **Isolation**: Broken instance doesn't poison the whole group
-2. **Failover**: Failed group doesn't stop request if others available
-3. **Fallback**: Always available even when normal providers exhausted
-4. **History**: Every search is recorded, no data loss
-5. **Thread Safety**: Safe for concurrent requests
-6. **No Legacy Support**: Old config formats not supported
+1. **隔离**：损坏的实例不会污染整个分组
+2. **故障转移**：失败的分组不会阻止请求（如果其他分组可用）
+3. **Fallback**：即使正常 providers 耗尽也始终可用
+4. **历史记录**：每次搜索都被记录，无数据丢失
+5. **线程安全**：对并发请求安全
+6. **无遗留支持**：不支持旧配置格式
 
-## Default Configuration
+## 默认配置
 
-**Optimized for availability with pooled accounts:**
+**针对账号池化的可用性优化：**
 
 ```json
 {
@@ -366,108 +366,108 @@ file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 line
 }
 ```
 
-**Benefits:**
-- Cross-provider traffic spreading (round_robin at group level)
-- Within-provider account spreading (random at instance level)
-- Automatic isolation of bad instances (circuit breaker)
-- Predictable fallback when capacity unavailable
+**优势：**
+- 跨 provider 流量分散（分组层 round_robin）
+- provider 内账号分散（实例层 random）
+- 自动隔离坏实例（熔断器）
+- 容量不可用时可预测的 fallback
 
-## AI Integration
+## AI 集成
 
-**Design Philosophy:**
-- Gateway returns file paths, not content
-- AI reads files on demand
-- File metadata helps AI decide reading strategy
+**设计理念：**
+- Gateway 返回文件路径，而非内容
+- AI 按需读取文件
+- 文件元数据帮助 AI 决定读取策略
 
-**Reading Strategy:**
+**读取策略：**
 ```
-File < 5KB  → Direct Read
-File > 5KB  → grep/jq to filter
-File > 50KB → Read specific sections
+文件 < 5KB  → 直接 Read
+文件 > 5KB  → grep/jq 过滤
+文件 > 50KB → 读取特定部分
 ```
 
-**Example Workflow:**
+**示例工作流：**
 ```bash
-# AI calls
+# AI 调用
 sg search "python async"
 
-# Output
+# 输出
 query="python async" provider=exa results=10
 file=/Users/xxx/.sg/history/2026-03/20260323-103045-abc123.json (12.4KB, 287 lines, 1823 words)
 
-# AI decides: file is 12KB, use jq to extract titles
+# AI 决定：文件 12KB，使用 jq 提取标题
 jq '.results[].title' /Users/xxx/.sg/history/2026-03/20260323-103045-abc123.json
 ```
 
-## Performance Characteristics
+## 性能特征
 
-**Latency:**
-- Circuit breaker check: < 1ms
-- Provider selection: < 1ms
-- Search request: 500-3000ms (provider dependent)
-- History write: 5-20ms (async, non-blocking)
+**延迟：**
+- 熔断器检查：< 1ms
+- Provider 选择：< 1ms
+- 搜索请求：500-3000ms（取决于 provider）
+- 历史写入：5-20ms（异步，非阻塞）
 
-**Throughput:**
-- Limited by provider rate limits
-- Round robin spreads load across accounts
-- Circuit breaker prevents cascading failures
+**吞吐量：**
+- 受 provider 速率限制约束
+- Round robin 在账号间分散负载
+- 熔断器防止级联失败
 
-**Scalability:**
-- Horizontal: Add more provider instances
-- Vertical: Increase `max_attempts` for more retries
-- History: Filesystem-based, scales to millions of entries
+**可扩展性：**
+- 水平：添加更多 provider 实例
+- 垂直：增加 `max_attempts` 以获得更多重试
+- 历史记录：基于文件系统，可扩展到数百万条目
 
-## Error Handling
+## 错误处理
 
-**Error Classification:**
+**错误分类：**
 ```python
-# Transient (retry with backoff)
+# 瞬态（使用退避重试）
 - 500 Internal Server Error
 - Timeout
 - Connection errors
 
-# Quota (long timeout)
+# 配额（长超时）
 - 429 Too Many Requests
 
-# Auth (very long timeout)
+# 认证（非常长的超时）
 - 401 Unauthorized
 - 403 Forbidden
 
-# Permanent (no retry)
+# 永久（不重试）
 - 400 Bad Request
 - 404 Not Found
 ```
 
-**Failure Propagation:**
+**失败传播：**
 ```
-Instance fails → Try next instance in group
-Group fails → Try next group
-All groups fail → Try fallback group
-Fallback fails → Raise error to caller
+实例失败 → 尝试分组中的下一个实例
+分组失败 → 尝试下一个分组
+所有分组失败 → 尝试 fallback 分组
+Fallback 失败 → 向调用者抛出错误
 ```
 
-## Monitoring & Metrics
+## 监控 & 指标
 
-**Per-Instance Metrics:**
-- Total requests
-- Success count
-- Failure count
-- Average latency
-- Circuit breaker state
-- Last failure type
-- Disabled seconds remaining
+**每实例指标：**
+- 总请求数
+- 成功计数
+- 失败计数
+- 平均延迟
+- 熔断器状态
+- 最后失败类型
+- 剩余禁用秒数
 
-**Access:**
+**访问：**
 ```bash
-sg status          # Overall status
-sg providers       # Per-provider status
-sg health          # Run health checks
+sg status          # 整体状态
+sg providers       # 每 provider 状态
+sg health          # 运行健康检查
 ```
 
-**HTTP API:**
+**HTTP API：**
 ```
-GET /status        # Gateway status
-GET /providers     # Provider list with metrics
-GET /metrics       # Detailed metrics
-POST /health-check # Trigger health checks
+GET /status        # Gateway 状态
+GET /providers     # Provider 列表及指标
+GET /metrics       # 详细指标
+POST /health-check # 触发健康检查
 ```

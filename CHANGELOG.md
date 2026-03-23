@@ -1,40 +1,40 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project will be documented in this file.
+本项目的所有重要变更都将记录在此文件中。
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
+本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [未发布]
 
-### Added
-- **Batch search support**: Execute multiple queries in parallel via `/search/batch` endpoint and `sg search q1 q2 q3` CLI command
-- **File-based result storage**: All search results are now saved to `~/.sg/history/` with file metadata (size, lines, words) returned to AI for intelligent reading strategies
+### 新增
+- **批量搜索支持**：通过 `/search/batch` 端点和 `sg search q1 q2 q3` CLI 命令并行执行多个查询
+- **基于文件的结果存储**：所有搜索结果现在保存到 `~/.sg/history/`，返回文件元数据（大小、行数、字数）供 AI 智能读取
 
-### Changed
-- **BREAKING**: Search responses now return `result_file` path instead of full results. AI tools must read the file to access content
-- **BREAKING**: History is now always enabled and cannot be disabled. The `history.enabled` config option has been removed
-- **Fallback mechanism**: Changed from global fallback to capability-specific. Configure `fallback_for: ["search"]` instead of `is_fallback: true`
-- **CLI search output**: Now returns file paths with metadata instead of printing results directly
+### 变更
+- **破坏性变更**：搜索响应现在返回 `result_file` 路径而非完整结果。AI 工具必须读取文件才能访问内容
+- **破坏性变更**：历史记录现在始终启用且无法禁用。`history.enabled` 配置选项已移除
+- **Fallback 机制**：从全局 fallback 改为能力特定。配置 `fallback_for: ["search"]` 而非 `is_fallback: true`
+- **CLI 搜索输出**：现在返回带元数据的文件路径，而非直接打印结果
 
-### Fixed
-- Round Robin load balancing now uses thread-safe implementation with `threading.Lock`
-- Removed all references to deprecated `is_fallback` field (replaced with `fallback_for`)
-- Type safety improvements: resolved mypy errors in executor and provider implementations
+### 修复
+- Round Robin 负载均衡现在使用 `threading.Lock` 实现线程安全
+- 移除所有对已弃用 `is_fallback` 字段的引用（替换为 `fallback_for`）
+- 类型安全改进：解决 executor 和 provider 实现中的 mypy 错误
 
-### Migration Guide
+### 迁移指南
 
-**If you use the HTTP API or MCP tools:**
-- Search responses now include `result_file` field pointing to a JSON file
-- Read the file to access full search results
-- File metadata helps decide reading strategy (direct read for small files, grep/jq for large files)
+**如果你使用 HTTP API 或 MCP 工具：**
+- 搜索响应现在包含指向 JSON 文件的 `result_file` 字段
+- 读取文件以访问完整搜索结果
+- 文件元数据帮助决定读取策略（小文件直接读取，大文件使用 grep/jq）
 
-**If you have custom config:**
-- Replace `is_fallback: true` with `fallback_for: ["search"]`
-- Remove `history.enabled` from config (history is always on)
+**如果你有自定义配置：**
+- 将 `is_fallback: true` 替换为 `fallback_for: ["search"]`
+- 从配置中移除 `history.enabled`（历史记录始终开启）
 
-**If you use CLI:**
-- `sg search` now outputs file paths instead of results
-- Use `cat <path>` or `jq` to view results
-- Multiple queries: `sg search "q1" "q2" "q3"` runs in parallel
+**如果你使用 CLI：**
+- `sg search` 现在输出文件路径而非结果
+- 使用 `cat <path>` 或 `jq` 查看结果
+- 多查询：`sg search "q1" "q2" "q3"` 并行运行
 
