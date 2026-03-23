@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -68,6 +69,7 @@ class Executor:
         self._breakers: dict[str, CircuitBreaker] = {}
         self._metrics: dict[str, ProviderMetrics] = {}
         self._rr_index = 0
+        self._rr_lock = threading.Lock()
 
     def _breaker(self, name: str) -> CircuitBreaker:
         if name not in self._breakers:
@@ -145,8 +147,9 @@ class Executor:
 
         groups = self.registry.get_group_order(capability)
         if self.config.strategy == Strategy.ROUND_ROBIN and groups:
-            idx = self._rr_index % len(groups)
-            self._rr_index += 1
+            with self._rr_lock:
+                idx = self._rr_index % len(groups)
+                self._rr_index += 1
             groups = groups[idx:] + groups[:idx]
         elif self.config.strategy == Strategy.RANDOM:
             groups = list(groups)

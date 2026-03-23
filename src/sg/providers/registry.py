@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import threading
 from typing import Callable, Type
 
 from ..models.config import ProviderConfig, ProviderInstanceConfig
@@ -47,6 +48,7 @@ class ProviderRegistry:
         self._groups: dict[str, list[str]] = {}
         self._instance_to_group: dict[str, str] = {}
         self._rr_index: dict[str, int] = {}
+        self._rr_lock = threading.Lock()
 
         if not BUILTIN_PROVIDERS:
             _register_builtins()
@@ -183,8 +185,9 @@ class ProviderRegistry:
             return min(available, key=lambda provider: provider.priority)
         if cfg.selection == "round_robin":
             available = sorted(available, key=lambda provider: provider.priority)
-            idx = self._rr_index.get(group_name, 0) % len(available)
-            self._rr_index[group_name] = self._rr_index.get(group_name, 0) + 1
+            with self._rr_lock:
+                idx = self._rr_index.get(group_name, 0) % len(available)
+                self._rr_index[group_name] = self._rr_index.get(group_name, 0) + 1
             return available[idx]
         return random.choice(available)
 
