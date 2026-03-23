@@ -77,7 +77,7 @@ def stop(port: int):
 
 
 @cli.command()
-@click.argument("query")
+@click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
 @click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
@@ -87,7 +87,7 @@ def stop(port: int):
 @click.option("--format", "-f", default="text", type=click.Choice(["text", "json", "markdown"]))
 @click.option("--port", default=8100, help="Gateway port")
 def search(
-    query: str,
+    queries: tuple[str, ...],
     provider: str | None,
     max: int,
     include_domains: tuple[str, ...],
@@ -97,37 +97,49 @@ def search(
     format: str,
     port: int,
 ):
-    """Execute a search query."""
+    """Execute one or more search queries (parallel if multiple)."""
     import httpx
+
+    payload = {
+        "provider": provider,
+        "max_results": max,
+        "include_domains": list(include_domains),
+        "exclude_domains": list(exclude_domains),
+        "time_range": time_range,
+        "search_depth": search_depth,
+    }
+
     try:
-        resp = httpx.post(
-            f"http://127.0.0.1:{port}/search",
-            json={
-                "query": query,
-                "provider": provider,
-                "max_results": max,
-                "include_domains": list(include_domains),
-                "exclude_domains": list(exclude_domains),
-                "time_range": time_range,
-                "search_depth": search_depth,
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        if len(queries) == 1:
+            resp = httpx.post(
+                f"http://127.0.0.1:{port}/search",
+                json={"query": queries[0], **payload},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            results = [resp.json()]
+        else:
+            resp = httpx.post(
+                f"http://127.0.0.1:{port}/search/batch",
+                json={"queries": list(queries), **payload},
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            results = resp.json()
 
         if format == "json":
-            click.echo(json.dumps(data, indent=2, ensure_ascii=False))
+            click.echo(json.dumps(results if len(queries) > 1 else results[0], indent=2, ensure_ascii=False))
         else:
-            click.echo(f"\nSearch: {data['query']}")
-            click.echo(f"  Provider: {data['provider']} | {data['total']} results | {data['latency_ms']:.0f}ms\n")
-            for i, r in enumerate(data["results"], 1):
-                click.echo(f"  [{i}] {r['title']}")
-                click.echo(f"      {r['url']}")
-                if r.get("content"):
-                    content = r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"]
-                    click.echo(f"      {content}")
-                click.echo()
+            for data in results:
+                click.echo(f"\nSearch: {data['query']}")
+                click.echo(f"  Provider: {data['provider']} | {data['total']} results | {data['latency_ms']:.0f}ms\n")
+                for i, r in enumerate(data["results"], 1):
+                    click.echo(f"  [{i}] {r['title']}")
+                    click.echo(f"      {r['url']}")
+                    if r.get("content"):
+                        content = r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"]
+                        click.echo(f"      {content}")
+                    click.echo()
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
