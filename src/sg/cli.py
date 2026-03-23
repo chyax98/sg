@@ -87,14 +87,23 @@ def stop(port: int):
 
 
 def _print_result_file(data: dict) -> None:
-    """Print result file info in concise format."""
+    """Print result file info with metadata and tool hints."""
     path = Path(data["result_file"])
     try:
+        text = path.read_text(encoding="utf-8")
         size_kb = path.stat().st_size / 1024
+        lines = text.count("\n")
+        words = len(text.split())
+
         click.echo(
-            f'query="{data["query"]}" provider={data["provider"]} '
-            f'results={data["total"]} size={size_kb:.1f}KB file={path}'
+            f'query="{data["query"]}" results={data["total"]} '
+            f'file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)'
         )
+
+        # Hint for large files
+        if size_kb > 50:
+            click.echo("💡 Tip: Use jq to filter large results")
+
     except OSError:
         click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
 

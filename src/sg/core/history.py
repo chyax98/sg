@@ -28,7 +28,7 @@ class SearchHistory:
     async def record(self, request: SearchRequest, response: SearchResponse) -> str:
         """Save search result. Returns absolute file path."""
         now = datetime.now()
-        entry_id = f"{now.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+        entry_id = f"{now.strftime('%H%M%S')}-{uuid.uuid4().hex[:6]}"
         month_dir = self._ensure_dir(now.strftime("%Y-%m"))
 
         entry = {
