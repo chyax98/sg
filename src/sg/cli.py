@@ -19,13 +19,22 @@ def cli():
 @cli.command()
 @click.option("--port", "-p", default=8100, help="Gateway port")
 @click.option("--config", "-c", default="config.json", help="Config file path")
-def start(port: int, config: str):
+@click.option("--log-level", default="INFO", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), help="Log level")
+@click.option("--log-file", default=None, help="Log file path (default: console only)")
+def start(port: int, config: str, log_level: str, log_file: str | None):
     """Start the gateway server."""
     import warnings
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
     warnings.filterwarnings("ignore")
 
+    # Setup logging
+    from ._logging import setup_logging
+    setup_logging(log_level=log_level, log_file=log_file)
+
     click.echo(f"Starting Search Gateway on port {port}...")
+    if log_file:
+        click.echo(f"Logging to: {log_file}")
+    click.echo(f"Log level: {log_level}")
 
     async def run():
         from .server.gateway import Gateway
