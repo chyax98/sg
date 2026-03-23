@@ -85,8 +85,7 @@ def _print_result_file(data: dict) -> None:
         lines = text.count("\n")
         words = len(text.split())
         click.echo(
-            f'query="{data["query"]}" provider={data["provider"]} '
-            f'results={data["total"]} latency={data["latency_ms"]:.0f}ms\n'
+            f'query="{data["query"]}" provider={data["provider"]} results={data["total"]}\n'
             f"file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)"
         )
     except OSError:
