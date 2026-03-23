@@ -76,8 +76,24 @@ def stop(port: int):
         click.echo(f"Failed to stop gateway: {e}", err=True)
 
 
+def _print_result_file(data: dict) -> None:
+    """Print result file info for AI consumption."""
+    path = Path(data["result_file"])
+    try:
+        text = path.read_text(encoding="utf-8")
+        size_kb = path.stat().st_size / 1024
+        lines = text.count("\n")
+        words = len(text.split())
+        click.echo(
+            f'query="{data["query"]}" provider={data["provider"]} '
+            f'results={data["total"]} latency={data["latency_ms"]:.0f}ms\n'
+            f"file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)"
+        )
+    except OSError:
+        click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
+
+
 @cli.command()
-@click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
 @click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
@@ -116,8 +132,7 @@ def search(
             )
             resp.raise_for_status()
             data = resp.json()
-            click.echo(f'Search results for "{queries[0]}" saved to: {data["result_file"]}')
-            click.echo(f"Use Read tool to view the full results.")
+            _print_result_file(data)
         else:
             resp = httpx.post(
                 f"http://127.0.0.1:{port}/search/batch",
@@ -125,10 +140,8 @@ def search(
                 timeout=60.0,
             )
             resp.raise_for_status()
-            click.echo(f"Batch search complete. {len(queries)} queries saved:")
             for data in resp.json():
-                click.echo(f'  "{data["query"]}" -> {data["result_file"]}')
-            click.echo("Use Read tool on each path to view results.")
+                _print_result_file(data)
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
