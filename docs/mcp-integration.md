@@ -2,29 +2,44 @@
 
 Search Gateway 提供 MCP (Model Context Protocol) 服务器，可以集成到 Claude Desktop 和 Claude Code 中。
 
-## 快速开始
+## 两种集成模式
 
-### 启动 MCP 服务器
+### SSE 模式（推荐）
 
+**优势**：
+- Gateway 持续运行，providers 只初始化一次
+- 多个客户端可以共享同一个 gateway 实例
+- 更高效，适合生产环境
+
+**配置步骤**：
+
+1. 启动 gateway 服务器：
 ```bash
-sg mcp
+sg start
 ```
 
-这会启动 stdio 模式的 MCP 服务器，等待来自 Claude 的连接。
+2. 配置 Claude Desktop/Code 的 `claude_desktop_config.json`：
+```json
+{
+  "mcpServers": {
+    "search-gateway": {
+      "url": "http://127.0.0.1:8100/mcp/sse"
+    }
+  }
+}
+```
 
----
+3. 重启 Claude Desktop/Code
 
-## Claude Desktop 集成
+### stdio 模式
 
-### 配置步骤
+**优势**：
+- 简单，无需启动服务器
+- 适合临时使用
 
-1. 找到 Claude Desktop 配置文件：
-   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-   - Linux: `~/.config/Claude/claude_desktop_config.json`
+**配置步骤**：
 
-2. 编辑配置文件，添加 Search Gateway MCP 服务器：
-
+1. 配置 Claude Desktop/Code 的 `claude_desktop_config.json`：
 ```json
 {
   "mcpServers": {
@@ -36,9 +51,17 @@ sg mcp
 }
 ```
 
-3. 重启 Claude Desktop
+2. 重启 Claude Desktop/Code
 
-4. 验证集成：在 Claude Desktop 中询问 "Can you search the web for X?"
+---
+
+## Claude Desktop 集成
+
+### 配置文件位置
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
 
 ### 完整配置示例
 

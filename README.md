@@ -1,6 +1,12 @@
 # Search Gateway
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
 统一搜索网关 — 基于 provider group + instance pool 的高可用搜索入口。
+
+**为 AI 设计的搜索网关**：多提供商自动故障转移、账号池化管理、熔断器保护，让 AI 代理始终能获得搜索结果。
 
 ## 特性
 
@@ -14,12 +20,22 @@
 - **运行时配置**: Web UI 可视化管理 + Config API 动态增删 Provider
 - **搜索历史**: 文件系统异步存储，支持查询回溯
 
-## 文档
+## 📚 文档
 
-- [产品蓝图](docs/product-blueprint.md)
-- [架构说明](ARCHITECTURE.md)
-- [搜索能力矩阵](docs/search-capability-matrix.md)
-- [测试手册](docs/testing.md)
+- **快速开始**
+  - [5 分钟快速开始](docs/quickstart.md) - 最快上手指南
+  - [用户指南](docs/user-guide.md) - 完整使用说明
+  - [MCP 集成](docs/mcp-integration.md) - Claude Desktop/Code 集成
+
+- **设计文档**
+  - [架构设计](ARCHITECTURE.md) - 系统架构和设计原则
+  - [产品蓝图](docs/product-blueprint.md) - 产品定位和目标
+  - [搜索能力矩阵](docs/search-capability-matrix.md) - Provider 能力对比
+
+- **开发文档**
+  - [贡献指南](CONTRIBUTING.md) - 如何参与贡献
+  - [测试手册](docs/testing.md) - 测试用例和方法
+  - [更新日志](CHANGELOG.md) - 版本变更记录
 
 ## 快速开始
 
@@ -418,6 +434,22 @@ class MyProvider(SearchProvider):
     # ... 实现方法
 ```
 
+## 贡献
+
+欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与项目。
+
 ## 许可证
 
-MIT
+[MIT License](LICENSE) - 详见 LICENSE 文件。
+
+## 致谢
+
+感谢以下搜索服务提供商：
+- [Tavily](https://tavily.com/) - AI 优化的搜索 API
+- [Exa](https://exa.ai/) - 语义搜索引擎
+- [Brave Search](https://brave.com/search/api/) - 隐私优先的搜索
+- [You.com](https://you.com/) - AI 搜索引擎
+- [Firecrawl](https://firecrawl.dev/) - 网页抓取和提取
+- [Jina AI](https://jina.ai/) - 神经搜索框架
+- [SearXNG](https://github.com/searxng/searxng) - 元搜索引擎
+- [DuckDuckGo](https://duckduckgo.com/) - 隐私搜索引擎
