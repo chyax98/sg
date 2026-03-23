@@ -46,7 +46,6 @@ class ProviderRegistry:
         self._config = config or {}
         self._groups: dict[str, list[str]] = {}
         self._instance_to_group: dict[str, str] = {}
-        self._fallback_group: str | None = None
         self._rr_index: dict[str, int] = {}
 
         if not BUILTIN_PROVIDERS:
@@ -55,13 +54,15 @@ class ProviderRegistry:
     async def initialize(self) -> None:
         """Initialize configured provider groups and fallback."""
         groups = dict(self._config)
-        has_explicit_fallback = any(cfg.enabled and cfg.is_fallback for cfg in groups.values())
+        has_explicit_fallback = any(
+            cfg.enabled and cfg.fallback_for for cfg in groups.values()
+        )
 
         if not has_explicit_fallback and "duckduckgo" not in groups:
             groups["duckduckgo"] = ProviderConfig(
                 type="duckduckgo",
                 priority=100,
-                is_fallback=True,
+                fallback_for=["search"],
                 instances=[ProviderInstanceConfig(id="duckduckgo")],
             )
 
@@ -99,10 +100,6 @@ class ProviderRegistry:
 
             if instance_ids:
                 self._groups[group_name] = instance_ids
-                if group_cfg.is_fallback:
-                    self._fallback_group = group_name
-                elif not has_explicit_fallback and provider_type == "duckduckgo":
-                    self._fallback_group = group_name
 
     async def shutdown(self) -> None:
         """Shutdown all provider instances."""
@@ -137,18 +134,24 @@ class ProviderRegistry:
         """Get provider groups for a capability, sorted by group priority."""
         candidates: list[tuple[int, str]] = []
         for group_name, instance_ids in self._groups.items():
-            if group_name == self._fallback_group:
-                continue
             cfg = self._config.get(group_name)
             if not cfg or not cfg.enabled:
+                continue
+            # Skip fallback groups from normal ordering
+            if capability in cfg.fallback_for:
                 continue
             if any(capability in self._providers[i].capabilities for i in instance_ids):
                 candidates.append((cfg.priority, group_name))
         candidates.sort(key=lambda item: item[0])
         return [group_name for _, group_name in candidates]
 
-    def get_fallback_group(self) -> str | None:
-        return self._fallback_group
+    def get_fallback_group(self, capability: str) -> str | None:
+        """Get fallback group for specific capability."""
+        for group_name, cfg in self._config.items():
+            if cfg.enabled and capability in cfg.fallback_for:
+                if group_name in self._groups:
+                    return group_name
+        return None
 
     def select_instance(
         self,
@@ -221,7 +224,10 @@ class ProviderRegistry:
                     capabilities=provider.capabilities,
                     search_features=getattr(provider, "search_features", []),
                     priority=provider.priority,
-                    is_fallback=(group_name == self._fallback_group),
+                    is_fallback=bool(
+                        self._config.get(group_name)
+                        and self._config[group_name].fallback_for
+                    ),
                 )
             )
         return result

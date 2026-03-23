@@ -55,7 +55,7 @@ class ProviderConfig(StrictConfigModel):
     enabled: bool = True
     priority: int = 10
     selection: InstanceSelection = InstanceSelection.RANDOM
-    is_fallback: bool = False
+    fallback_for: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     defaults: ProviderDefaultsConfig = Field(default_factory=ProviderDefaultsConfig)
     instances: list[ProviderInstanceConfig] = Field(default_factory=list)

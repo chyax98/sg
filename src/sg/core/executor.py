@@ -151,7 +151,7 @@ class Executor:
         elif self.config.strategy == Strategy.RANDOM:
             groups = list(groups)
             random.shuffle(groups)
-        fallback_group = self.registry.get_fallback_group()
+        fallback_group = self.registry.get_fallback_group(capability)
         if fallback_group and fallback_group not in groups:
             groups.append(fallback_group)
         return groups
@@ -205,7 +205,7 @@ class Executor:
                 if isinstance(error, ProviderCapabilityError):
                     break
 
-        fallback_group = self.registry.get_fallback_group()
+        fallback_group = self.registry.get_fallback_group(capability)
         if fallback_group and fallback_group not in tried_groups:
             attempted_instances = set()
             while True:
