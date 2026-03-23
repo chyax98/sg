@@ -63,12 +63,14 @@ class ProviderRegistry:
         )
 
         if not has_explicit_fallback and "duckduckgo" not in groups:
-            groups["duckduckgo"] = ProviderConfig(
+            ddg_config = ProviderConfig(
                 type="duckduckgo",
                 priority=100,
                 fallback_for=["search"],
                 instances=[ProviderInstanceConfig(id="duckduckgo")],
             )
+            groups["duckduckgo"] = ddg_config
+            self._config["duckduckgo"] = ddg_config
 
         for group_name, group_cfg in groups.items():
             if not group_cfg.enabled:

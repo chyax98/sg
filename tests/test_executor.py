@@ -266,7 +266,8 @@ class TestExecuteFallback:
 
 
 class TestExecuteStrategy:
-    def test_round_robin_rotates_start_group(self):
+    def test_groups_always_ordered_by_priority(self):
+        """Group selection is always by priority, strategy only affects instance selection."""
         registry = _make_registry(
             {
                 "p1": [FakeProvider(name="p1-1")],
@@ -274,13 +275,16 @@ class TestExecuteStrategy:
                 "p3": [FakeProvider(name="p3-1")],
             }
         )
+        # Strategy no longer affects group ordering
         executor = Executor(_make_config(strategy=Strategy.ROUND_ROBIN), registry)
 
+        # Groups are always returned in priority order (from get_group_order mock)
         assert executor._candidate_groups("search") == ["p1", "p2", "p3"]
-        assert executor._candidate_groups("search") == ["p2", "p3", "p1"]
-        assert executor._candidate_groups("search") == ["p3", "p1", "p2"]
+        assert executor._candidate_groups("search") == ["p1", "p2", "p3"]
+        assert executor._candidate_groups("search") == ["p1", "p2", "p3"]
 
-    def test_random_strategy_shuffles(self):
+    def test_random_strategy_does_not_shuffle_groups(self):
+        """Strategy no longer affects group ordering, only instance selection."""
         registry = _make_registry(
             {
                 "p1": [FakeProvider(name="p1-1")],
@@ -291,8 +295,10 @@ class TestExecuteStrategy:
         )
         executor = Executor(_make_config(strategy=Strategy.RANDOM), registry)
 
+        # Groups are always returned in priority order, regardless of strategy
         orderings = {tuple(executor._candidate_groups("search")) for _ in range(20)}
-        assert len(orderings) > 1
+        assert len(orderings) == 1
+        assert list(orderings)[0] == ("p1", "p2", "p3", "p4")
 
 
 class TestExecuteCircuitBreaker:

@@ -87,7 +87,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
     async def run():
         from .server.gateway import Gateway
-        gateway = Gateway(config_path=config or "config.json", port=port)
+        gateway = Gateway(config_path=config, port=port)
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
@@ -111,7 +111,7 @@ def mcp(config: str | None):
         from .server.gateway import Gateway
         from .server.mcp_server import MCPServer
 
-        gateway = Gateway(config_path=config or "config.json")
+        gateway = Gateway(config_path=config)
         await gateway.providers.initialize()
 
         server = MCPServer(gateway)
