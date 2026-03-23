@@ -100,20 +100,21 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
 
 @cli.command()
+@click.option("--port", "-p", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def mcp(config: str | None):
-    """Start MCP server in stdio mode (for Claude Desktop)."""
+def mcp(port: int, config: str | None):
+    """Start MCP server in stdio mode (for Claude Desktop).
+
+    Connects to a running gateway daemon (starts one if needed) and exposes
+    MCP tools for LLM integration.
+    """
     import warnings
     warnings.filterwarnings("ignore")
 
     async def run():
-        from .server.gateway import Gateway
         from .server.mcp_server import MCPServer
 
-        gateway = Gateway(config_path=config)
-        await gateway.providers.initialize()
-
-        server = MCPServer(gateway)
+        server = MCPServer(port=port, config=config)
         await server.run_stdio()
 
     try:

@@ -1,31 +1,38 @@
 """MCP Server — expose gateway as MCP tools for LLMs."""
 
 import logging
+from typing import Any
 
-from fastmcp import FastMCP
+import httpx
 
-from ..models.search import SearchResponse
+from .._utils import ensure_gateway_running
 
 logger = logging.getLogger(__name__)
 
 
-def _format_toon_preview(result: SearchResponse, max_preview: int = 5) -> str:
+def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
     """Format search result as TOON for LLM tool response."""
+    query = result.get("query", "")
+    result_file = result.get("result_file", "")
+    results = result.get("results", [])
+    total = result.get("total", len(results))
+
     lines = [
-        f"q: {result.query}",
-        f"file: {result.result_file}",
+        f"q: {query}",
+        f"file: {result_file}",
         "",
-        f"results[{min(result.total, max_preview)}]{{line,title,url,score}}:",
+        f"results[{min(total, max_preview)}]{{title,url,score}}:",
     ]
 
-    for i, r in enumerate(result.results[:max_preview], 1):
-        score_str = f"{r.score:.2f}" if r.score else "-"
-        title = r.title[:50] + "..." if len(r.title) > 50 else r.title
-        # line=i means read line i from the file
-        lines.append(f"  {i},{title},{r.url},{score_str}")
+    for i, r in enumerate(results[:max_preview], 1):
+        score = r.get("score")
+        score_str = f"{score:.2f}" if score else "-"
+        title = r.get("title", "")[:50] + "..." if len(r.get("title", "")) > 50 else r.get("title", "")
+        url = r.get("url", "")
+        lines.append(f"  {i},{title},{url},{score_str}")
 
-    if result.total > max_preview:
-        lines.append(f"  ... ({result.total - max_preview} more)")
+    if total > max_preview:
+        lines.append(f"  ... ({total - max_preview} more)")
 
     lines.append("")
     lines.append("To read specific results, read file lines:")
@@ -38,12 +45,33 @@ class MCPServer:
     """MCP Server for Search Gateway.
 
     Run with `sg mcp` to start in stdio mode for Claude Desktop integration.
+
+    This server connects to a running gateway daemon (starts one if needed)
+    and exposes MCP tools for LLM integration.
     """
 
-    def __init__(self, gateway):
-        self.gateway = gateway
+    def __init__(self, port: int = 8100, config: str | None = None):
+        self.port = port
+        self.config = config
+        self.base_url = f"http://127.0.0.1:{port}"
+
+        # Import FastMCP lazily to avoid import overhead
+        from fastmcp import FastMCP
+
         self.mcp = FastMCP(name="search-gateway")
         self._setup_tools()
+
+    async def _call_gateway(self, endpoint: str, data: dict | None = None) -> dict[str, Any]:
+        """Make HTTP call to gateway daemon, ensuring it's running."""
+        ensure_gateway_running(self.port, self.config)
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            if data:
+                resp = await client.post(f"{self.base_url}{endpoint}", json=data)
+            else:
+                resp = await client.get(f"{self.base_url}{endpoint}")
+            resp.raise_for_status()
+            return resp.json()
 
     def _setup_tools(self):
         @self.mcp.tool()
@@ -102,16 +130,16 @@ class MCPServer:
             - Read the view file for full results
             - Each result has [N] marker for easy navigation
             """
-            result = await self.gateway.search(
-                query=query,
-                provider=provider,
-                max_results=max_results,
-                include_domains=include_domains or [],
-                exclude_domains=exclude_domains or [],
-                time_range=time_range,
-                search_depth=search_depth,
-                extra=extra or {},
-            )
+            result = await self._call_gateway("/search", {
+                "query": query,
+                "provider": provider,
+                "max_results": max_results,
+                "include_domains": include_domains or [],
+                "exclude_domains": exclude_domains or [],
+                "time_range": time_range,
+                "search_depth": search_depth,
+                "extra": extra or {},
+            })
 
             return _format_toon_preview(result)
 
@@ -151,31 +179,24 @@ class MCPServer:
             Note: Content is returned directly (also saved to file for record keeping).
             For very long pages, content may be truncated to first 5000 characters per URL.
             """
-            result = await self.gateway.extract(urls=urls, format=format, extra=extra or {})
+            result = await self._call_gateway("/extract", {
+                "urls": urls,
+                "format": format,
+                "extra": extra or {},
+            })
 
             # Format content for display
             lines = []
-            for r in result.results:
-                lines.append(f"=== {r.url} ===")
-                if r.title:
-                    lines.append(f"Title: {r.title}")
-                if r.error:
-                    lines.append(f"Error: {r.error}")
+            for r in result.get("results", []):
+                lines.append(f"=== {r.get('url', '')} ===")
+                if r.get("title"):
+                    lines.append(f"Title: {r['title']}")
+                if r.get("error"):
+                    lines.append(f"Error: {r['error']}")
                 else:
-                    lines.append(r.content[:5000])
+                    lines.append(r.get("content", "")[:5000])
                 lines.append("")
-            content = "\n".join(lines)
-
-            # Save to view file (same structure as search)
-            await self.gateway.history.record_content(
-                operation="extract",
-                query=",".join(urls),
-                provider=result.provider,
-                latency_ms=result.latency_ms,
-                content=content,
-            )
-
-            return content
+            return "\n".join(lines)
 
         @self.mcp.tool()
         async def research(
@@ -210,18 +231,12 @@ class MCPServer:
             Note: Research content is returned directly (also saved to file for record keeping).
             This operation may take longer than simple search (10-30 seconds depending on depth).
             """
-            result = await self.gateway.research(topic=topic, depth=depth)
+            result = await self._call_gateway("/research", {
+                "topic": topic,
+                "depth": depth,
+            })
 
-            # Save to view file (same structure as search)
-            await self.gateway.history.record_content(
-                operation="research",
-                query=topic,
-                provider=result.provider,
-                latency_ms=result.latency_ms,
-                content=result.content,
-            )
-
-            return str(result.content)
+            return result.get("content", "")
 
         @self.mcp.tool()
         async def list_providers() -> str:
@@ -253,22 +268,19 @@ class MCPServer:
                       Capabilities: search, extract, research
                       Priority: 2
             """
-            providers = await self.gateway.list_providers()
+            providers = await self._call_gateway("/providers")
 
             lines = ["Search Gateway Providers:"]
             for p in providers:
-                status = "OK" if p.healthy else "DOWN"
-                fallback = f" (fallback: {','.join(p.fallback_for)})" if p.fallback_for else ""
-                lines.append(f"  [{status}] {p.name} ({p.type}){fallback}")
-                lines.append(f"      Capabilities: {', '.join(p.capabilities)}")
-                lines.append(f"      Priority: {p.priority}")
+                status = "OK" if p.get("healthy", True) else "DOWN"
+                fallback_for = p.get("fallback_for", [])
+                fallback = f" (fallback: {','.join(fallback_for)})" if fallback_for else ""
+                lines.append(f"  [{status}] {p.get('name', '')} ({p.get('type', '')}){fallback}")
+                lines.append(f"      Capabilities: {', '.join(p.get('capabilities', []))}")
+                lines.append(f"      Priority: {p.get('priority', '')}")
 
             return "\n".join(lines)
 
     async def run_stdio(self):
         """Run MCP server in stdio mode (for Claude Desktop)."""
         await self.mcp.run_stdio_async()
-
-    async def run_http(self, host: str = "0.0.0.0", port: int = 8101):
-        """Run MCP server in HTTP/SSE mode."""
-        await self.mcp.run_sse_async(host=host, port=port)  # type: ignore[attr-defined]
