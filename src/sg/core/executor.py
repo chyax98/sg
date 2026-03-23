@@ -139,9 +139,9 @@ class Executor:
     def _candidate_groups(self, capability: str, provider: str | None = None) -> list[str]:
         """Build ordered provider-group list to try.
 
-        Provider groups are ordered by absolute priority (lower number = higher priority).
-        The strategy (round_robin/random) only affects instance selection within a group,
-        NOT the group order itself.
+        For round_robin strategy, rotates the starting position to distribute load.
+        For failover strategy, always starts from highest priority.
+        For random strategy, shuffles the order.
         """
         if provider:
             if self.registry.get(provider):
@@ -151,13 +151,18 @@ class Executor:
                 return [provider]
             return []
 
-        # Get groups ordered by priority (absolute priority, no rotation)
-        groups = self.registry.get_group_order(capability)
+        # Get groups ordered by priority
+        groups = list(self.registry.get_group_order(capability))
 
-        # Strategy only affects instance selection within groups, not group order
-        # Random strategy can shuffle groups for load balancing if desired
-        if self.config.strategy == Strategy.RANDOM:
-            groups = list(groups)
+        # Apply strategy
+        if self.config.strategy == Strategy.ROUND_ROBIN:
+            # Rotate start position for load balancing
+            if groups:
+                with self._rr_lock:
+                    idx = self._rr_index % len(groups)
+                    self._rr_index += 1
+                groups = groups[idx:] + groups[:idx]
+        elif self.config.strategy == Strategy.RANDOM:
             random.shuffle(groups)
 
         # Add fallback group at the end
