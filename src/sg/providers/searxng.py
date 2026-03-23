@@ -54,7 +54,7 @@ class SearXNGProvider(SearchProvider):
 
         start = time.perf_counter()
 
-        params = {"q": request.query, "format": "json", "pageno": 1}
+        params: dict[str, str | int] = {"q": request.query, "format": "json", "pageno": 1}
         if request.time_range:
             params["time_range"] = request.time_range
 

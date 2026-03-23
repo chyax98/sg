@@ -179,11 +179,12 @@ class Executor:
             attempted_instances: set[str] = set()
 
             while True:
-                provider_instance = None
                 if provider and self.registry.get(provider):
                     if provider in attempted_instances:
                         break
                     provider_instance = self.registry.get(provider)
+                    if not provider_instance:
+                        break
                     attempted_instances.add(provider)
                 else:
                     provider_instance = self.registry.select_instance(

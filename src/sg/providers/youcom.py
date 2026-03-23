@@ -66,7 +66,7 @@ class YouComProvider(SearchProvider, ExtractProvider):
             request.include_domains,
             request.exclude_domains,
         )
-        params = {"query": query, "count": request.max_results}
+        params: dict[str, str | int] = {"query": query, "count": request.max_results}
         if request.time_range:
             freshness_map = {
                 "day": "day",
@@ -77,7 +77,9 @@ class YouComProvider(SearchProvider, ExtractProvider):
             if request.time_range in freshness_map:
                 params["freshness"] = freshness_map[request.time_range]
         if request.extra.get("language"):
-            params["language"] = request.extra["language"]
+            lang = request.extra["language"]
+            if isinstance(lang, str):
+                params["language"] = lang
 
         resp = await self._client.get("/v1/search", params=params)
         resp.raise_for_status()
