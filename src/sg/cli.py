@@ -18,10 +18,10 @@ def cli():
 
 @cli.command()
 @click.option("--port", "-p", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 @click.option("--log-level", default="INFO", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), help="Log level")
 @click.option("--log-file", default=None, help="Log file path (default: console only)")
-def start(port: int, config: str, log_level: str, log_file: str | None):
+def start(port: int, config: str | None, log_level: str, log_file: str | None):
     """Start the gateway server."""
     import warnings
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
@@ -52,8 +52,8 @@ def start(port: int, config: str, log_level: str, log_file: str | None):
 
 
 @cli.command()
-@click.option("--config", "-c", default="config.json", help="Config file path")
-def mcp(config: str):
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def mcp(config: str | None):
     """Start MCP server in stdio mode (for Claude Desktop)."""
     import warnings
     warnings.filterwarnings("ignore")
@@ -87,17 +87,29 @@ def stop(port: int):
 
 
 def _print_result_file(data: dict) -> None:
-    """Print result file info for AI consumption."""
+    """Print result file info with smart suggestions for next steps."""
     path = Path(data["result_file"])
     try:
         text = path.read_text(encoding="utf-8")
         size_kb = path.stat().st_size / 1024
         lines = text.count("\n")
         words = len(text.split())
+
         click.echo(
             f'query="{data["query"]}" provider={data["provider"]} results={data["total"]}\n'
             f"file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)"
         )
+
+        # Smart suggestions based on file size
+        if size_kb < 5:
+            click.echo(f"\n💡 Small file - view with: cat {path}")
+        elif size_kb < 50:
+            click.echo(f"\n💡 Medium file - extract key info:")
+            click.echo(f"   jq '.results[] | {{title, url}}' {path}")
+        else:
+            click.echo(f"\n💡 Large file - view first 5 results:")
+            click.echo(f"   jq '.results[0:5]' {path}")
+
     except OSError:
         click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
 
@@ -111,7 +123,7 @@ def _print_result_file(data: dict) -> None:
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
 @click.option("--port", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
     queries: tuple[str, ...],
     provider: str | None,
@@ -121,7 +133,7 @@ def search(
     time_range: str | None,
     search_depth: str,
     port: int,
-    config: str,
+    config: str | None,
 ):
     """Execute one or more search queries. Prints result file path(s)."""
     import httpx
@@ -171,8 +183,8 @@ def search(
 @click.option("--provider", "-p", default=None, help="Extract provider")
 @click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "text"]))
 @click.option("--port", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
-def extract(urls: tuple[str], provider: str | None, format: str, port: int, config: str):
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def extract(urls: tuple[str], provider: str | None, format: str, port: int, config: str | None):
     """Extract content from URLs."""
     import httpx
 
@@ -210,8 +222,8 @@ def extract(urls: tuple[str], provider: str | None, format: str, port: int, conf
 @click.argument("topic")
 @click.option("--depth", "-d", default="auto", type=click.Choice(["mini", "pro", "auto"]))
 @click.option("--port", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
-def research(topic: str, depth: str, port: int, config: str):
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def research(topic: str, depth: str, port: int, config: str | None):
     """Execute deep research on a topic."""
     import httpx
 
@@ -239,8 +251,8 @@ def research(topic: str, depth: str, port: int, config: str):
 
 @cli.command()
 @click.option("--port", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
-def status(port: int, config: str):
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def status(port: int, config: str | None):
     """Show gateway status."""
     import httpx
 
@@ -279,8 +291,8 @@ def status(port: int, config: str):
 
 @cli.command()
 @click.option("--port", default=8100, help="Gateway port")
-@click.option("--config", "-c", default="config.json", help="Config file path")
-def providers(port: int, config: str):
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def providers(port: int, config: str | None):
     """List available providers."""
     import httpx
 
@@ -389,6 +401,71 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+@cli.command()
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def init(config: str | None):
+    """Initialize Search Gateway configuration."""
+    from .models.config import resolve_config_path
+
+    config_path = resolve_config_path(config)
+
+    if config_path.exists():
+        click.echo(f"Config already exists: {config_path}")
+        if not click.confirm("Overwrite?"):
+            return
+
+    # Create default config template
+    template = {
+        "server": {"host": "127.0.0.1", "port": 8100},
+        "providers": {
+            "duckduckgo": {
+                "type": "duckduckgo",
+                "enabled": True,
+                "priority": 100,
+                "selection": "random",
+                "fallback_for": ["search"],
+                "instances": [{"id": "duckduckgo", "enabled": True}]
+            }
+        },
+        "executor": {
+            "strategy": "round_robin",
+            "health_check": {"failure_threshold": 3, "success_threshold": 2},
+            "circuit_breaker": {
+                "base_timeout": 3600,
+                "multiplier": 6,
+                "max_timeout": 172800,
+                "quota_timeout": 86400,
+                "auth_timeout": 604800
+            },
+            "failover": {"max_attempts": 3}
+        },
+        "history": {"dir": "~/.sg/history"},
+        "web_ui": {"enabled": True}
+    }
+
+    # Save config
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    with open(config_path, "w") as f:
+        json.dump(template, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    click.echo(f"\n✓ Created config: {config_path}")
+    click.echo("\nDefault provider: DuckDuckGo (free, no API key required)")
+    click.echo("\nTo add more providers, edit the config file or use the Web UI:")
+    click.echo("  sg start && sg web")
+    click.echo("\nAvailable providers:")
+    click.echo("  - Tavily (search, extract, research) - requires API key")
+    click.echo("  - Exa (search, extract) - requires API key")
+    click.echo("  - Brave (search) - requires API key")
+    click.echo("  - You.com (search) - requires API key")
+    click.echo("  - Firecrawl (extract) - requires API key")
+    click.echo("  - Jina (extract) - free, no API key")
+    click.echo("  - SearXNG (search) - requires self-hosted instance")
+    click.echo("\nTest your setup:")
+    click.echo("  sg search 'test query'")
 
 
 @cli.command()

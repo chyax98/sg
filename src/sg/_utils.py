@@ -15,14 +15,18 @@ def is_gateway_running(port: int = 8100) -> bool:
         return False
 
 
-def start_gateway_background(port: int = 8100, config: str = "config.json") -> bool:
+def start_gateway_background(port: int = 8100, config: str | None = None) -> bool:
     """Start gateway in background if not running. Returns True if started."""
     if is_gateway_running(port):
         return False
 
     # Start gateway in background using subprocess
+    cmd = ["sg", "start", "--port", str(port)]
+    if config:
+        cmd.extend(["--config", config])
+
     subprocess.Popen(
-        ["sg", "start", "--port", str(port), "--config", config],
+        cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -37,7 +41,7 @@ def start_gateway_background(port: int = 8100, config: str = "config.json") -> b
     return False
 
 
-def ensure_gateway_running(port: int = 8100, config: str = "config.json") -> None:
+def ensure_gateway_running(port: int = 8100, config: str | None = None) -> None:
     """Ensure gateway is running, start if needed."""
     if not is_gateway_running(port):
         start_gateway_background(port, config)
