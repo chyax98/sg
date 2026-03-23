@@ -8,19 +8,23 @@
 ## [Unreleased]
 
 ### 新增
+
 - **代码质量工具**：添加 mypy 类型检查和 ruff linting 配置
 
 ### 变更
+
 - **CLI 输出优化**：简化输出格式以减少 token 使用，提升 AI 工具集成体验
 - **配置模板简化**：精简默认配置模板，降低初次使用门槛
 - **全局工具 UX 改进**：优化全局安装后的使用体验
 
 ### 修复
+
 - 解决 ruff linting 检查发现的代码规范问题
 
-## [3.0.0] - 2026-03-23
+## 2026-03-23
 
 ### 新增
+
 - **批量搜索支持**：通过 `/search/batch` 端点和 `sg search q1 q2 q3` CLI 命令并行执行多个查询
 - **基于文件的结果存储**：所有搜索结果保存到 `~/.sg/history/`，返回文件元数据（大小、行数、字数）供 AI 智能读取
 - **SearXNG Provider**：支持自建 SearXNG 实例作为搜索源
@@ -30,6 +34,7 @@
 - **测试手册**：`docs/testing.md` 提供可复用的黑盒测试用例
 
 ### 变更
+
 - **破坏性变更**：搜索响应现在返回 `result_file` 路径而非完整结果。AI 工具必须读取文件才能访问内容
 - **破坏性变更**：历史记录现在始终启用且无法禁用。`history.enabled` 配置选项已移除
 - **破坏性变更**：Fallback 机制从全局改为能力特定。配置 `fallback_for: ["search"]` 而非 `is_fallback: true`
@@ -37,28 +42,32 @@
 - **CLI 搜索输出**：现在返回带元数据的文件路径，而非直接打印结果
 
 ### 修复
+
 - Round Robin 负载均衡现在使用 `threading.Lock` 实现线程安全
 - 移除所有对已弃用 `is_fallback` 字段的引用（替换为 `fallback_for`）
 - 类型安全改进：解决 executor 和 provider 实现中的 mypy 错误
 - Circuit Breaker 状态变更日志缺失问题
 
 ### 移除
+
 - 移除旧配置格式兼容层（不再支持 v2.x 配置）
 - 移除 `history.enabled` 配置项（历史记录强制开启）
 
 ### 迁移指南
 
 **如果你使用 HTTP API 或 MCP 工具：**
+
 - 搜索响应现在包含指向 JSON 文件的 `result_file` 字段
 - 读取文件以访问完整搜索结果
 - 文件元数据帮助决定读取策略（小文件直接读取，大文件使用 grep/jq）
 
 **如果你有自定义配置：**
+
 - 将 `is_fallback: true` 替换为 `fallback_for: ["search"]`
 - 从配置中移除 `history.enabled`（历史记录始终开启）
 
 **如果你使用 CLI：**
+
 - `sg search` 现在输出文件路径而非结果
 - 使用 `cat <path>` 或 `jq` 查看结果
 - 多查询：`sg search "q1" "q2" "q3"` 并行运行
-
