@@ -14,6 +14,12 @@
 - **运行时配置**: Web UI 可视化管理 + Config API 动态增删 Provider
 - **搜索历史**: 文件系统异步存储，支持查询回溯
 
+## 文档
+
+- [产品蓝图](docs/product-blueprint.md)
+- [架构说明](ARCHITECTURE.md)
+- [搜索能力矩阵](docs/search-capability-matrix.md)
+
 ## 快速开始
 
 ### 安装

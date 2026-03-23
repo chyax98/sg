@@ -179,17 +179,41 @@ Gateway.search/extract/research(params)
   │
   └─ Executor.execute(capability, operation, provider?)
        │
-       ├─ _candidates(capability): 按 capability 过滤 → breaker 过滤 → priority 排序/轮询
+       ├─ _candidates(capability, provider?): 
+       │   ├─ 指定 provider? → 插入队首 + 其余按策略排序
+       │   └─ 未指定? → 按 capability 过滤 → breaker 过滤 → priority 排序/轮询
        │
        └─ for name in candidates[:max_attempts]:
             ├─ breaker.allow_request()? → 跳过 OPEN 的 provider
             ├─ asyncio.timeout(provider.timeout) 包装
             ├─ await operation(provider)
             │   ├─ 成功 → breaker.record_success() → metrics++ → return
+            │   ├─ 空结果? → empty_result_failover? → continue : return
             │   └─ 失败 → classify_error() → breaker.record_failure(type) → metrics++ → continue
             │
             └─ 全部失败 → 尝试 fallback (DuckDuckGo) → 仍失败 → RuntimeError
 ```
+
+### 指定 Provider + Failover
+
+**核心设计：指定 provider 是偏好，不是锁定**
+
+```python
+# 用户指定 Tavily，但系统会继续 failover
+gateway.search("MCP protocol", provider="tavily")
+
+# 执行链路:
+# 1. 尝试 Tavily (指定)
+# 2. Tavily 失败/熔断/空结果 → 尝试 Brave
+# 3. Brave 失败 → 尝试 Exa
+# 4. ... → 尝试 DuckDuckGo
+# 5. 返回第一个成功的结果
+```
+
+**设计原则：**
+- 用户影响"从谁开始"，不影响"是否继续"
+- 空结果可配置为触发 failover
+- 最终响应包含完整的尝试历史
 
 ## 配置系统
 

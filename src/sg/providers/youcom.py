@@ -5,20 +5,24 @@ import time
 
 import httpx
 
-from ..models.search import SearchRequest, SearchResponse, SearchResult
-from .base import ProviderInfo, SearchProvider
+from ..models.search import (
+    ExtractRequest, ExtractResponse, ExtractResult,
+    SearchRequest, SearchResponse, SearchResult,
+)
+from .base import ExtractProvider, ProviderInfo, SearchProvider
 
 
-class YouComProvider(SearchProvider):
+class YouComProvider(SearchProvider, ExtractProvider):
     """You.com: high accuracy AI search (93% SimpleQA).
 
     API: https://docs.you.com
+    Supports: Search, Contents (extract)
     """
 
     info = ProviderInfo(
         type="youcom",
         display_name="You.com",
-        capabilities=("search",),
+        capabilities=("search", "extract"),
         search_features=("include_domains", "exclude_domains", "time_range"),
     )
 
@@ -100,3 +104,29 @@ class YouComProvider(SearchProvider):
             query=request.query, provider=self.name,
             results=results, total=len(results), latency_ms=latency,
         )
+
+    async def extract(self, request: ExtractRequest) -> ExtractResponse:
+        """Extract content from URLs using You.com Contents API."""
+        if not self._client:
+            raise RuntimeError("Not initialized")
+
+        start = time.perf_counter()
+
+        # You.com Contents API expects POST with urls array
+        resp = await self._client.post(
+            "/v1/contents",
+            json={"urls": request.urls},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        results = []
+        for item in data:  # Response is a list
+            results.append(ExtractResult(
+                url=item.get("url", ""),
+                content=item.get("html", ""),
+                title=None,  # You.com doesn't return title in contents
+            ))
+
+        latency = (time.perf_counter() - start) * 1000
+        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
