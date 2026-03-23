@@ -7,6 +7,22 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def resolve_config_path(path: str | None = None) -> Path:
+    """Resolve config file path with priority: --config > ~/.sg/config.json > ./config.json"""
+    if path:
+        return Path(path).expanduser()
+
+    global_config = Path.home() / ".sg" / "config.json"
+    if global_config.exists():
+        return global_config
+
+    local_config = Path("config.json")
+    if local_config.exists():
+        return local_config
+
+    return global_config
+
+
 class StrictConfigModel(BaseModel):
     """Base config model. Unknown fields are rejected."""
 
@@ -130,8 +146,8 @@ class GatewayConfig(StrictConfigModel):
     web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
 
     @classmethod
-    def load(cls, path: str = "config.json") -> "GatewayConfig":
-        config_path = Path(path)
+    def load(cls, path: str | None = None) -> "GatewayConfig":
+        config_path = resolve_config_path(path)
         if not config_path.exists():
             return cls()
         with open(config_path) as f:
@@ -139,15 +155,17 @@ class GatewayConfig(StrictConfigModel):
         return cls.model_validate(data)
 
     @classmethod
-    def load_raw(cls, path: str = "config.json") -> dict:
-        config_path = Path(path)
+    def load_raw(cls, path: str | None = None) -> dict:
+        config_path = resolve_config_path(path)
         if not config_path.exists():
             return {}
         with open(config_path) as f:
             return json.load(f)
 
     @staticmethod
-    def save_raw(data: dict, path: str = "config.json") -> None:
-        with open(path, "w") as f:
+    def save_raw(data: dict, path: str | None = None) -> None:
+        config_path = resolve_config_path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, "w") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")

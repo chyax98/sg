@@ -2,11 +2,15 @@
 
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ..models.search import (
-    ExtractRequest, ExtractResponse, ExtractResult,
-    SearchRequest, SearchResponse, SearchResult,
+    ExtractRequest,
+    ExtractResponse,
+    ExtractResult,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 from .base import ExtractProvider, ProviderInfo, SearchProvider
 
@@ -80,7 +84,7 @@ class ExaProvider(SearchProvider, ExtractProvider):
         if request.time_range:
             days_map = {"day": 1, "week": 7, "month": 30, "year": 365}
             if request.time_range in days_map:
-                start_date = datetime.now(timezone.utc) - timedelta(days=days_map[request.time_range])
+                start_date = datetime.now(UTC) - timedelta(days=days_map[request.time_range])
                 kwargs["start_published_date"] = start_date.isoformat()
 
         result = await self._client.search(**kwargs)

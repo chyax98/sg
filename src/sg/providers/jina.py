@@ -5,8 +5,12 @@ import time
 import httpx
 
 from ..models.search import (
-    ExtractRequest, ExtractResponse, ExtractResult,
-    SearchRequest, SearchResponse, SearchResult,
+    ExtractRequest,
+    ExtractResponse,
+    ExtractResult,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 from .base import ExtractProvider, ProviderInfo, SearchProvider
 
