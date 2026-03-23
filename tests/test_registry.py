@@ -44,7 +44,7 @@ class TestProviderRegistry:
                 ),
                 "backup": ProviderConfig(
                     type="fake-registry",
-                    is_fallback=True,
+                    fallback_for=["search"],
                     instances=[ProviderInstanceConfig(id="backup-1")],
                 ),
             }
@@ -52,7 +52,7 @@ class TestProviderRegistry:
 
         try:
             await registry.initialize()
-            assert registry.get_fallback_group() == "backup"
+            assert registry.get_fallback_group("search") == "backup"
             assert "duckduckgo" not in registry.all()
         finally:
             await registry.shutdown()

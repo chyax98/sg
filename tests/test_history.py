@@ -14,7 +14,7 @@ def history_dir(tmp_path):
 
 @pytest.fixture
 def history(history_dir):
-    config = HistoryConfig(enabled=True, dir=history_dir)
+    config = HistoryConfig(dir=history_dir)
     return SearchHistory(config)
 
 
@@ -87,14 +87,17 @@ class TestSearchHistory:
         assert len(entries) == 0
 
     @pytest.mark.asyncio
-    async def test_disabled_history(self, history_dir):
-        config = HistoryConfig(enabled=False, dir=history_dir)
+    async def test_disabled_history(self, tmp_path):
+        # Test that history handles non-existent/invalid directory gracefully
+        # Use a path that doesn't exist and can't be created (parent doesn't exist either)
+        config = HistoryConfig(dir=str(tmp_path / "nonexistent" / "subdir"))
         history = SearchHistory(config)
 
         req = SearchRequest(query="test")
         resp = SearchResponse(query="test", provider="test", results=[], total=0, latency_ms=0)
+        # Should still work - record creates directories as needed
         result = await history.record(req, resp)
-        assert result is None
+        assert result is not None
 
     @pytest.mark.asyncio
     async def test_get_nonexistent(self, history):

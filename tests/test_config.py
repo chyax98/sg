@@ -26,7 +26,7 @@ class TestProviderConfig:
         assert config.enabled is True
         assert config.priority == 10
         assert config.selection == InstanceSelection.RANDOM
-        assert config.is_fallback is False
+        assert config.fallback_for == []
         assert config.defaults.timeout == 30000
         assert config.defaults.env == {}
         assert config.instances == []

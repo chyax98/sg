@@ -5,22 +5,33 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [3.0.0] - 2026-03-23
 
 ### 新增
 - **批量搜索支持**：通过 `/search/batch` 端点和 `sg search q1 q2 q3` CLI 命令并行执行多个查询
-- **基于文件的结果存储**：所有搜索结果现在保存到 `~/.sg/history/`，返回文件元数据（大小、行数、字数）供 AI 智能读取
+- **基于文件的结果存储**：所有搜索结果保存到 `~/.sg/history/`，返回文件元数据（大小、行数、字数）供 AI 智能读取
+- **SearXNG Provider**：支持自建 SearXNG 实例作为搜索源
+- **全局 CLI 安装**：支持 `uv tool install` 全局安装
+- **自动启动服务**：CLI 命令检测网关未运行时自动后台启动
+- **完整日志链路**：添加 DEBUG 级别日志，覆盖执行全流程（候选列表、实例选择、熔断器状态变更）
+- **测试手册**：`docs/testing.md` 提供可复用的黑盒测试用例
 
 ### 变更
 - **破坏性变更**：搜索响应现在返回 `result_file` 路径而非完整结果。AI 工具必须读取文件才能访问内容
 - **破坏性变更**：历史记录现在始终启用且无法禁用。`history.enabled` 配置选项已移除
-- **Fallback 机制**：从全局 fallback 改为能力特定。配置 `fallback_for: ["search"]` 而非 `is_fallback: true`
+- **破坏性变更**：Fallback 机制从全局改为能力特定。配置 `fallback_for: ["search"]` 而非 `is_fallback: true`
+- **Provider 优先级修正**：Provider Group 使用绝对优先级，不受 Round Robin 策略影响。策略仅作用于 Instance 级别
 - **CLI 搜索输出**：现在返回带元数据的文件路径，而非直接打印结果
 
 ### 修复
 - Round Robin 负载均衡现在使用 `threading.Lock` 实现线程安全
 - 移除所有对已弃用 `is_fallback` 字段的引用（替换为 `fallback_for`）
 - 类型安全改进：解决 executor 和 provider 实现中的 mypy 错误
+- Circuit Breaker 状态变更日志缺失问题
+
+### 移除
+- 移除旧配置格式兼容层（不再支持 v2.x 配置）
+- 移除 `history.enabled` 配置项（历史记录强制开启）
 
 ### 迁移指南
 

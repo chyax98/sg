@@ -19,6 +19,7 @@
 - [产品蓝图](docs/product-blueprint.md)
 - [架构说明](ARCHITECTURE.md)
 - [搜索能力矩阵](docs/search-capability-matrix.md)
+- [测试手册](docs/testing.md)
 
 ## 快速开始
 
@@ -198,7 +199,7 @@ async with AsyncSearchClient() as client:
       "enabled": true,
       "priority": 100,
       "selection": "random",
-      "is_fallback": true,
+      "fallback_for": ["search"],
       "defaults": { "timeout": 30000 },
       "instances": [{ "id": "duckduckgo" }]
     }
@@ -215,7 +216,7 @@ async with AsyncSearchClient() as client:
     },
     "failover": { "max_attempts": 3 }
   },
-  "history": { "enabled": true, "dir": "~/.sg/history" }
+  "history": { "dir": "~/.sg/history" }
 }
 ```
 
