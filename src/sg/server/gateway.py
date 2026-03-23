@@ -87,8 +87,19 @@ class Gateway:
             return await p.search(request)
 
         response = await self.executor.execute("search", op, provider=provider)
-        await self.history.record(request, response)
+        result_file = await self.history.record(request, response)
+        response.result_file = result_file
         return response
+
+    async def search_batch(
+        self, queries: list[str], provider: str | None = None, max_results: int = 10, **kwargs,
+    ) -> list[SearchResponse]:
+        """Execute multiple searches in parallel."""
+        tasks = [
+            self.search(q, provider=provider, max_results=max_results, **kwargs)
+            for q in queries
+        ]
+        return await asyncio.gather(*tasks, return_exceptions=False)
 
     async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> Any:
         """Extract content with failover."""
@@ -124,7 +135,6 @@ class Gateway:
             "running": self._running,
             "port": self.port,
             "strategy": self.config.executor.strategy.value,
-            "history_enabled": self.config.history.enabled,
             "providers": {
                 "total": len(providers),
                 "available": search_providers,

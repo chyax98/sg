@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from ..models.config import InstanceSelection, ProviderDefaultsConfig, Strategy
 from ..providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,11 @@ class SearchBody(BaseModel):
     query: str
     provider: str | None = None
     max_results: int = Field(default=10, ge=1, le=50)
-    include_domains: list[str] = []
-    exclude_domains: list[str] = []
+    include_domains: list[str] = Field(default_factory=list)
+    exclude_domains: list[str] = Field(default_factory=list)
     time_range: str | None = None
     search_depth: str = "basic"
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExtractBody(BaseModel):
@@ -44,20 +45,38 @@ class ResearchBody(BaseModel):
     provider: str | None = None
 
 
+class SearchBatchBody(BaseModel):
+    queries: list[str]
+    provider: str | None = None
+    max_results: int = Field(default=10, ge=1, le=50)
+    include_domains: list[str] = Field(default_factory=list)
+    exclude_domains: list[str] = Field(default_factory=list)
+    time_range: str | None = None
+    search_depth: str = "basic"
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProviderBody(BaseModel):
     type: str
-    api_key: str | None = None
-    url: str | None = None
     enabled: bool = True
     priority: int = 10
-    timeout: int = 30000
-    is_fallback: bool = False
-    env: dict[str, str] = {}
+    selection: InstanceSelection = InstanceSelection.RANDOM
+    fallback_for: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    defaults: ProviderDefaultsConfig = Field(default_factory=ProviderDefaultsConfig)
+
+
+class ProviderInstanceBody(BaseModel):
+    enabled: bool = True
+    api_key: str | None = None
+    url: str | None = None
+    timeout: int | None = None
+    priority: int = 10
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 class SettingsBody(BaseModel):
-    strategy: str | None = None
-    history_enabled: bool | None = None
+    strategy: Strategy | None = None
 
 
 class HTTPServer:
@@ -67,7 +86,7 @@ class HTTPServer:
         self.gateway = gateway
         self.port = port
         self.host = host
-        self.app = FastAPI(title="Search Gateway", version="3.0.0")
+        self.app = FastAPI(title="Search Gateway")
         self._server = None
 
         self.app.add_middleware(
@@ -106,6 +125,23 @@ class HTTPServer:
                 return result.model_dump()
             except Exception as e:
                 logger.error(f"Search error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/search/batch")
+        async def search_batch(body: SearchBatchBody):
+            try:
+                results = await gw.search_batch(
+                    queries=body.queries, provider=body.provider,
+                    max_results=body.max_results,
+                    include_domains=body.include_domains,
+                    exclude_domains=body.exclude_domains,
+                    time_range=body.time_range,
+                    search_depth=body.search_depth,
+                    extra=body.extra,
+                )
+                return [r.model_dump() for r in results]
+            except Exception as e:
+                logger.error(f"Batch search error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post("/extract")
@@ -175,39 +211,88 @@ class HTTPServer:
         async def get_provider_types():
             return ProviderRegistry.get_provider_types()
 
-        @self.app.put("/api/config/providers/{instance_id}")
-        async def upsert_provider(instance_id: str, body: ProviderBody):
+        @self.app.put("/api/config/providers/{provider_id}")
+        async def upsert_provider(provider_id: str, body: ProviderBody):
             raw = gw.get_config_raw()
-            raw.setdefault("providers", {})[instance_id] = {
+            raw.setdefault("providers", {})[provider_id] = {
                 "type": body.type,
                 "enabled": body.enabled,
                 "priority": body.priority,
-                "timeout": body.timeout,
-                "is_fallback": body.is_fallback,
-                **({"api_key": body.api_key} if body.api_key is not None else {}),
-                **({"url": body.url} if body.url is not None else {}),
-                **({"env": body.env} if body.env else {}),
+                "selection": body.selection.value,
+                "fallback_for": body.fallback_for,
+                "tags": body.tags,
+                "defaults": body.defaults.model_dump(),
+                "instances": raw.get("providers", {}).get(provider_id, {}).get("instances", []),
             }
             gw.save_config_raw(raw)
-            return {"status": "ok", "instance_id": instance_id}
+            return {"status": "ok", "provider_id": provider_id}
 
-        @self.app.delete("/api/config/providers/{instance_id}")
-        async def delete_provider(instance_id: str):
+        @self.app.delete("/api/config/providers/{provider_id}")
+        async def delete_provider(provider_id: str):
             raw = gw.get_config_raw()
             providers = raw.get("providers", {})
-            if instance_id not in providers:
-                raise HTTPException(status_code=404, detail=f"Provider '{instance_id}' not found")
-            del providers[instance_id]
+            if provider_id not in providers:
+                raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+            del providers[provider_id]
             gw.save_config_raw(raw)
-            return {"status": "ok", "deleted": instance_id}
+            return {"status": "ok", "deleted": provider_id}
+
+        @self.app.put("/api/config/providers/{provider_id}/instances/{instance_id}")
+        async def upsert_provider_instance(provider_id: str, instance_id: str, body: ProviderInstanceBody):
+            raw = gw.get_config_raw()
+            provider_cfg = raw.setdefault("providers", {}).setdefault(
+                provider_id,
+                {
+                    "type": provider_id,
+                    "enabled": True,
+                    "priority": 10,
+                    "selection": "random",
+                    "defaults": {},
+                    "instances": [],
+                },
+            )
+            instances = provider_cfg.setdefault("instances", [])
+            instance_payload = {
+                "id": instance_id,
+                "enabled": body.enabled,
+                "priority": body.priority,
+                **({"api_key": body.api_key} if body.api_key is not None else {}),
+                **({"url": body.url} if body.url is not None else {}),
+                **({"timeout": body.timeout} if body.timeout is not None else {}),
+                **({"env": body.env} if body.env else {}),
+            }
+
+            replaced = False
+            for idx, existing in enumerate(instances):
+                if existing.get("id") == instance_id:
+                    instances[idx] = instance_payload
+                    replaced = True
+                    break
+            if not replaced:
+                instances.append(instance_payload)
+
+            gw.save_config_raw(raw)
+            return {"status": "ok", "provider_id": provider_id, "instance_id": instance_id}
+
+        @self.app.delete("/api/config/providers/{provider_id}/instances/{instance_id}")
+        async def delete_provider_instance(provider_id: str, instance_id: str):
+            raw = gw.get_config_raw()
+            provider_cfg = raw.get("providers", {}).get(provider_id)
+            if not provider_cfg:
+                raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+            instances = provider_cfg.get("instances", [])
+            new_instances = [item for item in instances if item.get("id") != instance_id]
+            if len(new_instances) == len(instances):
+                raise HTTPException(status_code=404, detail=f"Instance '{instance_id}' not found")
+            provider_cfg["instances"] = new_instances
+            gw.save_config_raw(raw)
+            return {"status": "ok", "provider_id": provider_id, "deleted": instance_id}
 
         @self.app.put("/api/config/settings")
         async def update_settings(body: SettingsBody):
             raw = gw.get_config_raw()
             if body.strategy is not None:
-                raw.setdefault("executor", {})["strategy"] = body.strategy
-            if body.history_enabled is not None:
-                raw.setdefault("history", {})["enabled"] = body.history_enabled
+                raw.setdefault("executor", {})["strategy"] = body.strategy.value
             gw.save_config_raw(raw)
             return {"status": "ok"}
 

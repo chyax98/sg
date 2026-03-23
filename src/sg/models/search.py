@@ -10,11 +10,11 @@ class SearchRequest(BaseModel):
     query: str
     provider: str | None = None
     max_results: int = Field(default=10, ge=1, le=50)
-    include_domains: list[str] = []
-    exclude_domains: list[str] = []
+    include_domains: list[str] = Field(default_factory=list)
+    exclude_domains: list[str] = Field(default_factory=list)
     time_range: str | None = None  # day, week, month, year
     search_depth: str = "basic"  # basic, advanced, fast, ultra-fast
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class SearchResult(BaseModel):
@@ -28,7 +28,7 @@ class SearchResult(BaseModel):
     published_date: str | None = None
     author: str | None = None
     raw_content: str | None = None
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context):
         if self.snippet and not self.content:
@@ -44,6 +44,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
     total: int
     latency_ms: float
+    result_file: str | None = None  # path to history file, set after recording
 
 
 class ExtractRequest(BaseModel):
@@ -88,13 +89,14 @@ class ResearchResponse(BaseModel):
 class ProviderStatus(BaseModel):
     """Provider status for API responses."""
     name: str
+    group: str = ""
     type: str = ""
     enabled: bool
     healthy: bool
     capabilities: list[str]
-    search_features: list[str] = []
+    search_features: list[str] = Field(default_factory=list)
     priority: int
-    is_fallback: bool
+    fallback_for: list[str] = Field(default_factory=list)
     circuit_breaker: str = "closed"
     latency_ms: float | None = None
     error: str | None = None

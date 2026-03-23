@@ -1,4 +1,4 @@
-"""Tests for providers (Jina, Firecrawl, You.com) with v3.0 base class."""
+"""Tests for providers (Jina, Firecrawl, You.com)."""
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock

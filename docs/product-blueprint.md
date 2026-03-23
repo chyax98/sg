@@ -17,6 +17,33 @@
 `池化` 是手段，不是终极目的。  
 `高可用搜索能力` 才是产品交付物。
 
+## 当前已实现策略
+
+当前产品已经落地的是一套偏保守的高可用策略，不做智能 provider 决策：
+
+1. 外层按 provider group 调度
+2. 内层按 group 内 instances 调度
+3. 实例失败时先切同组其他实例
+4. 同组不可用后再切下一个 group
+5. 全部常规 group 失败后再走 fallback
+
+默认配置的含义是：
+
+- 外层 `round_robin`
+  - 在不同 provider 类型之间分散请求
+- 内层 `random`
+  - 在同类 provider 的多个账号之间随机分摊
+- breaker 按实例生效
+  - 某个 key 坏了，不会拖死整个 provider 类别
+- quota / auth / transient 分开处理
+  - 配额、认证、临时错误采用不同禁用时长
+
+当前明确不做：
+
+- 智能推荐哪个 provider 最优
+- 基于结果质量自动改换 provider
+- 把空结果自动判定为失败并继续切换
+
 ## 目标用户
 
 单人使用者，典型特征：
@@ -61,17 +88,15 @@
 这意味着：
 
 1. **指定 provider 不是承诺，而是偏好**
-   - 用户可以说"优先用 Tavily"
-   - 但系统保证：Tavily 失败会继续尝试其他 provider
-   - 最终目标是返回内容，而不是满足指定的 provider
+   - 用户可以指定一个 provider group 作为起点
+   - 如果指定的是 group，系统仍会在该 group 内切换实例
+   - 如果指定的是 instance，系统会先尝试该 instance，再走 fallback
+   - 最终目标是返回内容，而不是满足某个固定入口
 
-2. **空结果也是一种失败**
-   - 如果 Tavily 返回 0 条结果，继续尝试其他 provider
-   - 直到有内容或所有 provider 都耗尽
-
-3. **Failover 是默认行为，不可关闭**
-   - 无论是否指定 provider，failover 始终生效
-   - 用户只能影响"从谁开始"，不能影响"是否继续"
+2. **Failover 是默认行为**
+   - 不指定 provider 时，系统会按全局策略在多个 group 间切换
+   - 指定 group 时，系统会在该 group 内切换实例
+   - 所有正常路径失败后，系统会继续尝试 fallback
 
 ## 产品形态
 
@@ -94,10 +119,12 @@
 - round-robin / failover 路由
 - quota / auth / transient 分类处理
 - 熔断、恢复、禁用时间管理
-- **指定 provider 后的 failover 链路**
+- 指定 group / instance 时的受限执行语义
 - 基础状态页与实例级计数
 
 ## 产品对象模型
+
+下面这部分是产品设计方向，不等于当前所有能力都已实现。
 
 ### 1. Instance
 
@@ -132,8 +159,8 @@ Pool 的行为规则：
 - 最大尝试次数
 - quota 如何禁用
 - auth 错误如何处理
-- **空结果是否继续尝试** ✅ P0 新增
-- **指定 provider 失败后的 failover 策略** ✅ P0 新增
+- 空结果是否继续尝试
+- 指定 provider 后是否继续跨 group failover
 
 ### 4. Intent
 
@@ -157,27 +184,14 @@ Intent 最终映射到某个 pool 或某组 policy。
 用户调用: search(query, provider="tavily")
 
 执行链路:
-1. 优先尝试 Tavily (指定 provider)
-2. Tavily 失败/熔断/空结果 → 尝试 Brave
-3. Brave 失败 → 尝试 Exa
-4. Exa 失败 → 尝试 You.com
-5. ... → 尝试 DuckDuckGo (fallback)
-6. 全部失败 → 返回错误
+1. 只在 Tavily group 内选择一个健康 instance
+2. 当前 instance 失败 → 尝试 Tavily group 内其他 instance
+3. Tavily group 无可用 instance → 尝试 fallback group
+4. fallback 失败 → 返回错误
 
 返回结果包含:
 - 实际使用的 provider
-- 尝试过的 provider 列表
-- 每次尝试的结果状态
-```
-
-### 空结果处理
-
-```
-provider 返回 0 条结果 → 视为"需要 failover"
-
-例外情况:
-- 这是最后一个可用 provider
-- Policy 明确配置 empty_result_stop=true
+- 基础运行状态信息
 ```
 
 ### 熔断与恢复
@@ -196,7 +210,7 @@ provider 连续失败 3 次 → 熔断 (OPEN)
 
 ### 2. 内容优先于 Provider
 
-用户要的是搜索结果，不是某个特定 provider 的响应。指定 provider 只是表达偏好，不是锁定。
+用户要的是搜索结果，不是某个特定 provider 的响应。当前实现里，指定 group 是偏好，指定 instance 更接近 pin。
 
 ### 3. 可解释优先于黑箱
 
@@ -228,9 +242,9 @@ provider 连续失败 3 次 → 熔断 (OPEN)
 1. ✅ 统一搜索接口
 2. ✅ 多实例轮询与自动 failover
 3. ✅ quota / auth / transient 分类禁用
-4. ✅ **指定 provider 后的 failover 链路**
-5. ✅ **空结果继续尝试策略**
-6. ✅ 多级 fallback
+4. ✅ 指定 group / instance 的执行语义
+5. ✅ 单一 fallback 组
+6. ✅ provider group + instance 配置模型
 7. ✅ 基础状态查看
 8. ✅ 实例级请求计数
 9. ✅ 最小可用的配置和热重载
@@ -244,8 +258,9 @@ provider 连续失败 3 次 → 熔断 (OPEN)
 3. provider 能力矩阵与参数支持声明
 4. quota reset 策略模型
 5. 更直观的可用性视图
-6. **搜索结果合并与去重**
-7. **多 provider 结果聚合**
+6. 空结果继续尝试策略
+7. 搜索结果合并与去重
+8. 多 provider 结果聚合
 
 ## P2 范围
 
@@ -282,4 +297,4 @@ provider 连续失败 3 次 → 熔断 (OPEN)
 
 把零散、脆弱、额度有限的个人搜索资源，编排成一个稳定、透明、低维护的高可用搜索能力。
 
-> **无论指定哪个 provider，内容总会到来。**
+> **尽量少让用户关心 provider，尽量稳定地把结果送回来。**

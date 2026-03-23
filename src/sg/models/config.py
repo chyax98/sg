@@ -4,88 +4,130 @@ import json
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class StrictConfigModel(BaseModel):
+    """Base config model. Unknown fields are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class Strategy(str, Enum):
-    """Provider selection strategy."""
-    FAILOVER = "failover"       # always start from highest priority
-    ROUND_ROBIN = "round_robin" # rotate across providers to spread load
-    RANDOM = "random"           # random selection
+    """Cross-provider selection strategy."""
+
+    FAILOVER = "failover"
+    ROUND_ROBIN = "round_robin"
+    RANDOM = "random"
 
 
-class ProviderConfig(BaseModel):
-    """Provider instance configuration."""
-    type: str | None = None
+class InstanceSelection(str, Enum):
+    """Within-provider instance selection strategy."""
+
+    RANDOM = "random"
+    ROUND_ROBIN = "round_robin"
+    PRIORITY = "priority"
+
+
+class ProviderDefaultsConfig(StrictConfigModel):
+    """Shared provider-level defaults inherited by instances."""
+
+    timeout: int = 30000
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderInstanceConfig(StrictConfigModel):
+    """Concrete provider instance configuration."""
+
+    id: str
     enabled: bool = True
     api_key: str | None = None
     url: str | None = None
+    timeout: int | None = None
     priority: int = 10
-    timeout: int = 30000
-    is_fallback: bool = False
-    env: dict[str, str] = {}
+    env: dict[str, str] = Field(default_factory=dict)
 
 
-class HealthCheckConfig(BaseModel):
+class ProviderConfig(StrictConfigModel):
+    """Provider group configuration."""
+
+    type: str | None = None
+    enabled: bool = True
+    priority: int = 10
+    selection: InstanceSelection = InstanceSelection.RANDOM
+    fallback_for: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    defaults: ProviderDefaultsConfig = Field(default_factory=ProviderDefaultsConfig)
+    instances: list[ProviderInstanceConfig] = Field(default_factory=list)
+
+
+class HealthCheckConfig(StrictConfigModel):
     """Health check thresholds."""
+
     failure_threshold: int = 3
     success_threshold: int = 2
 
 
-class CircuitBreakerConfig(BaseModel):
+class CircuitBreakerConfig(StrictConfigModel):
     """Circuit breaker settings with exponential backoff."""
-    base_timeout: int = 3600        # 1 hour — first trip
-    multiplier: float = 6.0         # 1h → 6h → 36h → ...
-    max_timeout: int = 172800       # 48 hours cap
-    quota_timeout: int = 86400      # 24h for quota exhaustion (429)
-    auth_timeout: int = 604800      # 7 days for auth failures (401/403)
+
+    base_timeout: int = 3600
+    multiplier: float = 6.0
+    max_timeout: int = 172800
+    quota_timeout: int = 86400
+    auth_timeout: int = 604800
 
 
-class FailoverConfig(BaseModel):
+class FailoverConfig(StrictConfigModel):
     """Failover execution settings."""
+
     max_attempts: int = 3
 
 
-class ExecutorConfig(BaseModel):
+class ExecutorConfig(StrictConfigModel):
     """Executor configuration."""
+
     strategy: Strategy = Strategy.ROUND_ROBIN
-    health_check: HealthCheckConfig = HealthCheckConfig()
-    circuit_breaker: CircuitBreakerConfig = CircuitBreakerConfig()
-    failover: FailoverConfig = FailoverConfig()
+    health_check: HealthCheckConfig = Field(default_factory=HealthCheckConfig)
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    failover: FailoverConfig = Field(default_factory=FailoverConfig)
 
 
-class ServerConfig(BaseModel):
+class ServerConfig(StrictConfigModel):
     """HTTP server configuration."""
+
     host: str = "127.0.0.1"
     port: int = 8100
 
 
-class MCPConfig(BaseModel):
+class MCPConfig(StrictConfigModel):
     """MCP server configuration."""
+
     enabled: bool = False
 
 
-class HistoryConfig(BaseModel):
+class HistoryConfig(StrictConfigModel):
     """Search history configuration."""
-    enabled: bool = True
+
     dir: str = "~/.sg/history"
     max_entries: int = 10000
 
 
-class WebUIConfig(BaseModel):
+class WebUIConfig(StrictConfigModel):
     """Web UI configuration."""
+
     enabled: bool = True
 
 
-class GatewayConfig(BaseModel):
+class GatewayConfig(StrictConfigModel):
     """Main gateway configuration."""
-    version: str = "3.0"
-    server: ServerConfig = ServerConfig()
-    providers: dict[str, ProviderConfig] = {}
-    executor: ExecutorConfig = ExecutorConfig()
-    mcp: MCPConfig = MCPConfig()
-    history: HistoryConfig = HistoryConfig()
-    web_ui: WebUIConfig = WebUIConfig()
+
+    server: ServerConfig = Field(default_factory=ServerConfig)
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    executor: ExecutorConfig = Field(default_factory=ExecutorConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
+    history: HistoryConfig = Field(default_factory=HistoryConfig)
+    web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
 
     @classmethod
     def load(cls, path: str = "config.json") -> "GatewayConfig":
@@ -94,7 +136,6 @@ class GatewayConfig(BaseModel):
             return cls()
         with open(config_path) as f:
             data = json.load(f)
-        data = cls._migrate(data)
         return cls.model_validate(data)
 
     @classmethod
@@ -110,33 +151,3 @@ class GatewayConfig(BaseModel):
         with open(path, "w") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
-
-    @classmethod
-    def _migrate(cls, data: dict) -> dict:
-        version = data.get("version", "1.0")
-        if version == "3.0":
-            return data
-
-        if "load_balancer" in data:
-            lb = data.pop("load_balancer")
-            strategy = lb.get("strategy", "failover")
-            if strategy in ("weighted", "least_connections"):
-                strategy = "round_robin"
-            data["executor"] = {
-                "strategy": strategy,
-                "health_check": lb.get("health_check", {}),
-                "failover": lb.get("failover", {}),
-            }
-
-        data.pop("routing", None)
-        data.pop("default_providers", None)
-        data.pop("cache", None)
-
-        for cfg in data.get("providers", {}).values():
-            for dead_key in ("weight", "transport", "command", "args", "capabilities"):
-                cfg.pop(dead_key, None)
-
-        data["version"] = "3.0"
-        return data
-
-

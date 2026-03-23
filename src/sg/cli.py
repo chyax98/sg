@@ -1,7 +1,6 @@
 """CLI — command line interface for Search Gateway."""
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -10,7 +9,6 @@ import click
 
 
 @click.group()
-@click.version_option(version="3.0.0")
 def cli():
     """Search Gateway — unified search with failover."""
     pass
@@ -33,7 +31,7 @@ def start(port: int, config: str):
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-        click.echo(f"\n  Commands:  sg search 'query' | sg status | sg stop\n")
+        click.echo("\n  Commands:  sg search 'query' | sg status | sg stop\n")
         await gateway.wait_shutdown()
 
     try:
@@ -77,58 +75,71 @@ def stop(port: int):
         click.echo(f"Failed to stop gateway: {e}", err=True)
 
 
+def _print_result_file(data: dict) -> None:
+    """Print result file info for AI consumption."""
+    path = Path(data["result_file"])
+    try:
+        text = path.read_text(encoding="utf-8")
+        size_kb = path.stat().st_size / 1024
+        lines = text.count("\n")
+        words = len(text.split())
+        click.echo(
+            f'query="{data["query"]}" provider={data["provider"]} results={data["total"]}\n'
+            f"file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)"
+        )
+    except OSError:
+        click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
+
+
 @cli.command()
-@click.argument("query")
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
 @click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
 @click.option("--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search")
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
-@click.option("--format", "-f", default="text", type=click.Choice(["text", "json", "markdown"]))
 @click.option("--port", default=8100, help="Gateway port")
 def search(
-    query: str,
+    queries: tuple[str, ...],
     provider: str | None,
     max: int,
     include_domains: tuple[str, ...],
     exclude_domains: tuple[str, ...],
     time_range: str | None,
     search_depth: str,
-    format: str,
     port: int,
 ):
-    """Execute a search query."""
+    """Execute one or more search queries. Prints result file path(s)."""
     import httpx
-    try:
-        resp = httpx.post(
-            f"http://127.0.0.1:{port}/search",
-            json={
-                "query": query,
-                "provider": provider,
-                "max_results": max,
-                "include_domains": list(include_domains),
-                "exclude_domains": list(exclude_domains),
-                "time_range": time_range,
-                "search_depth": search_depth,
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
 
-        if format == "json":
-            click.echo(json.dumps(data, indent=2, ensure_ascii=False))
+    payload = {
+        "provider": provider,
+        "max_results": max,
+        "include_domains": list(include_domains),
+        "exclude_domains": list(exclude_domains),
+        "time_range": time_range,
+        "search_depth": search_depth,
+    }
+
+    try:
+        if len(queries) == 1:
+            resp = httpx.post(
+                f"http://127.0.0.1:{port}/search",
+                json={"query": queries[0], **payload},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            _print_result_file(data)
         else:
-            click.echo(f"\nSearch: {data['query']}")
-            click.echo(f"  Provider: {data['provider']} | {data['total']} results | {data['latency_ms']:.0f}ms\n")
-            for i, r in enumerate(data["results"], 1):
-                click.echo(f"  [{i}] {r['title']}")
-                click.echo(f"      {r['url']}")
-                if r.get("content"):
-                    content = r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"]
-                    click.echo(f"      {content}")
-                click.echo()
+            resp = httpx.post(
+                f"http://127.0.0.1:{port}/search/batch",
+                json={"queries": list(queries), **payload},
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            for data in resp.json():
+                _print_result_file(data)
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
@@ -210,11 +221,10 @@ def status(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nSearch Gateway Status\n")
+        click.echo("\nSearch Gateway Status\n")
         click.echo(f"  Running:   {data['running']}")
         click.echo(f"  Port:      {data['port']}")
         click.echo(f"  Strategy:  {data.get('strategy', 'N/A')}")
-        click.echo(f"  History:   {'on' if data.get('history_enabled') else 'off'}")
         click.echo(f"  Providers: {len(data['providers']['available'])} available")
         click.echo(f"  Available: {', '.join(data['providers']['available'])}")
 
@@ -247,10 +257,10 @@ def providers(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nAvailable Providers\n")
+        click.echo("\nAvailable Providers\n")
         for p in data:
             status_icon = "+" if p.get("circuit_breaker", "closed") != "open" else "-"
-            fallback = " (fallback)" if p["is_fallback"] else ""
+            fallback = f" (fallback: {','.join(p['fallback_for'])})" if p.get("fallback_for") else ""
             ptype = f" [{p.get('type', '')}]" if p.get("type") else ""
             cb = f" [circuit: {p['circuit_breaker']}]" if p.get("circuit_breaker") != "closed" else ""
             click.echo(f"  {status_icon} {p['name']}{ptype}{fallback}{cb}")
@@ -279,7 +289,7 @@ def health(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nHealth Check Results\n")
+        click.echo("\nHealth Check Results\n")
         click.echo(f"  Healthy:   {', '.join(data['healthy']) or 'None'}")
         unhealthy_names = [u['name'] if isinstance(u, dict) else u for u in data.get('unhealthy', [])]
         click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
@@ -337,7 +347,7 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
         for e in entries:
             ts = e["timestamp"][:19].replace("T", " ")
             click.echo(f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)")
-        click.echo(f"\nUse 'sg history <id>' to see full results.")
+        click.echo("\nUse 'sg history <id>' to see full results.")
 
     except httpx.ConnectError:
         click.echo("Gateway not running. Start with 'sg start'", err=True)

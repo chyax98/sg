@@ -1,8 +1,9 @@
-"""Executor — unified failover execution with circuit breaker + round-robin."""
+"""Executor — provider failover + per-instance selection + circuit breaker."""
 
 import asyncio
 import logging
 import random
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -67,7 +68,8 @@ class Executor:
         self.registry = registry
         self._breakers: dict[str, CircuitBreaker] = {}
         self._metrics: dict[str, ProviderMetrics] = {}
-        self._rr_index = 0  # round-robin counter
+        self._rr_index = 0
+        self._rr_lock = threading.Lock()
 
     def _breaker(self, name: str) -> CircuitBreaker:
         if name not in self._breakers:
@@ -133,43 +135,29 @@ class Executor:
                 logger.warning(f"Provider {name} failed: {e}")
             return False, None, e
 
-    def _candidates(self, capability: str, provider: str | None = None) -> list[str]:
-        """Build ordered list of provider names to try."""
+    def _candidate_groups(self, capability: str, provider: str | None = None) -> list[str]:
+        """Build ordered provider-group list to try."""
         if provider:
-            return [provider]
-
-        providers = self.registry.get_by_capability(capability)
-        available = [p for p in providers if self._breaker(p.name).allow_request()]
-
-        if not available:
-            # All breakers open — check fallback
-            fallback = self.registry.get_fallback()
-            if fallback and self._breaker(fallback.name).allow_request():
-                return [fallback.name]
+            if self.registry.get(provider):
+                group_name = self.registry.group_for_instance(provider)
+                return [group_name] if group_name else []
+            if self.registry.has_group(provider):
+                return [provider]
             return []
 
-        if self.config.strategy == Strategy.ROUND_ROBIN:
-            # Rotate starting position to spread load across providers
-            n = len(available)
-            idx = self._rr_index % n
-            self._rr_index += 1
-            rotated = available[idx:] + available[:idx]
-            names = [p.name for p in rotated]
+        groups = self.registry.get_group_order(capability)
+        if self.config.strategy == Strategy.ROUND_ROBIN and groups:
+            with self._rr_lock:
+                idx = self._rr_index % len(groups)
+                self._rr_index += 1
+            groups = groups[idx:] + groups[:idx]
         elif self.config.strategy == Strategy.RANDOM:
-            shuffled = list(available)
-            random.shuffle(shuffled)
-            names = [p.name for p in shuffled]
-        else:
-            # FAILOVER: priority order (already sorted)
-            names = [p.name for p in available]
-
-        # Append fallback at end if not already included
-        fallback = self.registry.get_fallback()
-        if fallback and fallback.name not in names:
-            if self._breaker(fallback.name).allow_request():
-                names.append(fallback.name)
-
-        return names
+            groups = list(groups)
+            random.shuffle(groups)
+        fallback_group = self.registry.get_fallback_group(capability)
+        if fallback_group and fallback_group not in groups:
+            groups.append(fallback_group)
+        return groups
 
     async def execute(
         self,
@@ -178,32 +166,72 @@ class Executor:
         provider: str | None = None,
     ) -> Any:
         """Execute operation with failover across providers."""
-        candidates = self._candidates(capability, provider)
-        if not candidates:
+        groups = self._candidate_groups(capability, provider)
+        if not groups:
             raise RuntimeError(f"No providers available for '{capability}'")
 
-        max_attempts = min(len(candidates), self.config.failover.max_attempts)
+        max_attempts = min(len(groups), self.config.failover.max_attempts)
         last_error: Exception | None = None
 
-        for name in candidates[:max_attempts]:
-            p = self.registry.get(name)
-            if not p:
-                continue
+        tried_groups = groups[:max_attempts]
 
-            ok, result, error = await self._try_provider(name, p, operation)
-            if ok:
-                return result
-            last_error = error
+        for group_name in tried_groups:
+            attempted_instances: set[str] = set()
 
-        # Try fallback as last resort
-        fallback = self.registry.get_fallback()
-        if fallback and fallback.name not in candidates[:max_attempts]:
-            ok, result, error = await self._try_provider(fallback.name, fallback, operation)
-            if ok:
-                logger.info(f"Fallback to {fallback.name} succeeded")
-                return result
-            logger.error(f"Fallback {fallback.name} also failed: {error}")
-            last_error = error
+            while True:
+                if provider and self.registry.get(provider):
+                    if provider in attempted_instances:
+                        break
+                    provider_instance = self.registry.get(provider)
+                    if not provider_instance:
+                        break
+                    attempted_instances.add(provider)
+                else:
+                    provider_instance = self.registry.select_instance(
+                        group_name,
+                        capability,
+                        excluded_instances=attempted_instances,
+                        allow_request=lambda instance_id: self._breaker(instance_id).allow_request(),
+                    )
+                    if not provider_instance:
+                        break
+                    attempted_instances.add(provider_instance.name)
+
+                ok, result, error = await self._try_provider(
+                    provider_instance.name,
+                    provider_instance,
+                    operation,
+                )
+                if ok:
+                    return result
+                last_error = error
+
+                if isinstance(error, ProviderCapabilityError):
+                    break
+
+        fallback_group = self.registry.get_fallback_group(capability)
+        if fallback_group and fallback_group not in tried_groups:
+            attempted_instances = set()
+            while True:
+                provider_instance = self.registry.select_instance(
+                    fallback_group,
+                    capability,
+                    excluded_instances=attempted_instances,
+                    allow_request=lambda instance_id: self._breaker(instance_id).allow_request(),
+                )
+                if not provider_instance:
+                    break
+                attempted_instances.add(provider_instance.name)
+
+                ok, result, error = await self._try_provider(
+                    provider_instance.name,
+                    provider_instance,
+                    operation,
+                )
+                if ok:
+                    logger.info(f"Fallback to {provider_instance.name} succeeded")
+                    return result
+                last_error = error
 
         raise RuntimeError(f"All providers failed. Last error: {last_error}")
 

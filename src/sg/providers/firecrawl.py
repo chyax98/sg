@@ -72,11 +72,11 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
         for item in items:
             if isinstance(item, dict):
                 results.append(SearchResult(
-                    title=item.get("title", ""),
-                    url=item.get("url", item.get("link", "")),
-                    content=item.get("markdown", item.get("content", item.get("description", ""))),
-                    snippet=item.get("description", ""),
-                    score=item.get("score", 0),
+                    title=item.get("title") or "",
+                    url=item.get("url") or item.get("link") or "",
+                    content=item.get("markdown") or item.get("content") or item.get("description") or "",
+                    snippet=item.get("description") or "",
+                    score=float(item.get("score", 0)),
                     source=self.name,
                 ))
             else:
