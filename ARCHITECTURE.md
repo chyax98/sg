@@ -180,40 +180,49 @@ CLOSED ──[失败次数 >= 阈值]──> OPEN
 ### SearchHistory
 
 **职责：**
-- 将所有搜索结果保存到文件系统
-- 向调用者返回文件路径
+- 分层存储：view（AI 真相源）+ trace（系统索引）
+- 支持选择性读取，节省 Token
 - 提供 list/get/clear 操作
 
 **文件结构：**
 ```
 ~/.sg/history/
-├── 2026-03/
-│   ├── 20260323-103045-abc123.json
-│   ├── 20260323-103102-def456.json
-│   └── ...
-└── 2026-04/
-    └── ...
+├── view/              # AI 真相源（JSONL 格式）
+│   └── 2026-03/
+│       ├── 1774293083049-abc1.txt   # 每行一个完整结果
+│       └── ...
+└── trace/             # 系统索引（JSON 元数据）
+    └── 2026-03/
+        ├── 1774293083049-abc1.json  # 只有元数据，无 results
+        └── ...
 ```
 
-**文件格式：**
+**view 文件格式（JSONL）：**
+```json
+{"index": 1, "title": "...", "url": "...", "content": "...", "score": 0.95}
+{"index": 2, "title": "...", "url": "...", "content": "...", "score": 0.92}
+```
+每行一个完整结果，支持行级选择性读取。
+
+**trace 文件格式：**
 ```json
 {
-  "id": "20260323-103045-abc123",
-  "timestamp": "2026-03-23T10:30:45Z",
+  "id": "1774293083049-abc1",
+  "timestamp": "2026-03-24T03:12:00",
   "query": "python async",
   "provider": "exa",
   "total": 10,
   "latency_ms": 843,
-  "results": [
-    {
-      "title": "...",
-      "url": "...",
-      "content": "...",
-      "score": 0.95
-    }
-  ]
+  "view_file": "/Users/xxx/.sg/history/view/2026-03/1774293083049-abc1.txt"
 }
 ```
+不含 results，只存元数据和 view 文件路径。
+
+**AI 使用流程：**
+1. 调用 `search()` 获得 TOON 格式预览（含行号）
+2. 根据预览判断哪些结果相关
+3. 调用 `Read file line X` 只读需要的行
+4. 节省 Token，避免读全量
 
 ## 能力特定的 Fallback
 
@@ -279,12 +288,21 @@ POST /search/batch
 # CLI
 sg search "query1" "query2" "query3"
 
-# 输出
-query="query1" provider=exa results=10
-file=/Users/xxx/.sg/history/2026-03/20260323-103045-aaa111.json (12.4KB, 287 lines, 1823 words)
+# 输出（TOON 格式）
+q: query1
+file: /Users/xxx/.sg/history/view/2026-03/1774293083049-aaa1.txt
 
-query="query2" provider=tavily results=10
-file=/Users/xxx/.sg/history/2026-03/20260323-103046-bbb222.json (8.2KB, 195 lines, 1205 words)
+results[10]{line,title,url,score}:
+  1,Result 1 Title,https://...,0.95
+  2,Result 2 Title,https://...,0.92
+  ...
+
+To read specific results, read file lines:
+  Line 1 = result [1], Line 2 = result [2], etc.
+
+q: query2
+file: /Users/xxx/.sg/history/view/2026-03/1774293083050-bbb2.txt
+...
 ```
 
 ## 配置模型
@@ -472,3 +490,223 @@ GET /providers     # Provider 列表及指标
 GET /metrics       # 详细指标
 POST /health-check # 触发健康检查
 ```
+# AI 使用 Search Gateway 指南
+
+## 快速开始
+
+### 1. 基本搜索
+
+当你需要搜索信息时，使用 `search` 工具：
+
+```
+search("Python asyncio best practices")
+```
+
+你会收到类似这样的响应：
+
+```
+q: Python asyncio best practices
+file: /Users/xxx/.sg/history/view/2026-03/1774293083049-359b.txt
+
+results[5]{line,title,url,score}:
+  1,Python Asyncio Documentation,https://docs.python.org/3/library/asyncio.html,0.95
+  2,Real Python: Async IO in Python,https://realpython.com/async-io-python/,0.92
+  3,Asyncio Tutorial: The Complete Guide,https://superfastpython.com/asyncio-tutorial/,0.88
+  4,Python Asyncio Best Practices,https://...,0.85
+  5,Understanding Python Asyncio,https://...,0.82
+
+To read specific results, read file lines:
+  Line 1 = result [1], Line 2 = result [2], etc.
+```
+
+### 2. 选择性读取（关键！）
+
+**不要**一上来就读整个文件。先看预览，选择相关的结果：
+
+```
+# 好的做法：只读相关的结果
+Read file /Users/xxx/.sg/history/view/2026-03/1774293083049-359b.txt line 1
+Read file /Users/xxx/.sg/history/view/2026-03/1774293083049-359b.txt line 2
+
+# 不好的做法：读整个文件（浪费 Token）
+Read file /Users/xxx/.sg/history/view/2026-03/1774293083049-359b.txt
+```
+
+## 推理流程
+
+### 步骤 1: 分析预览
+
+看 TOON 响应中的这几列：
+- **line**: 行号，对应文件中的第几行
+- **title**: 标题，判断内容相关性
+- **url**: 来源域名，判断可信度
+- **score**: 相关度分数（如果有）
+
+### 步骤 2: 判断相关性
+
+根据标题和 URL，快速判断哪些结果可能相关：
+
+```
+results[5]{line,title,url,score}:
+  1,Python Asyncio Documentation,https://docs.python.org/...,0.95  ← 官方文档，必看
+  2,Real Python: Async IO,https://realpython.com/...,0.92          ← 权威教程，必看
+  3,某博客翻译,https://unknown-blog.com/...,0.88                     ← 可能相关
+  4,Stack Overflow: asyncio error,https://stackoverflow.com/...,0.85 ← 问题排查，暂时不需要
+  5,Asyncio vs Threading,https://...,0.82                           ← 对比文章，可选
+```
+
+### 步骤 3: 选择性读取
+
+只读你判断为相关的结果：
+
+```
+# 先读最相关的 1 和 2
+Read file line 1
+Read file line 2
+
+# 分析后，如果需要更多背景
+Read file line 5
+```
+
+### 步骤 4: 迭代深入
+
+如果前几个结果不够，再读更多：
+
+```
+# 发现结果 1、2 不够详细
+Read file line 3
+Read file line 5
+```
+
+## 节省 Token 的技巧
+
+### 技巧 1: 分批读取
+
+不要一次性读很多，分批来：
+
+```
+# 先读前 2 个
+Read file line 1-2
+
+# 分析后，再决定要不要读更多
+Read file line 3
+```
+
+### 技巧 2: 根据分数筛选
+
+如果结果有 score，优先读高分：
+
+```
+results[5]{line,title,url,score}:
+  1,...,0.95  ← 优先
+  2,...,0.92  ← 优先
+  3,...,0.88  ← 其次
+  4,...,0.65  ← 可能跳过
+  5,...,0.62  ← 可能跳过
+```
+
+### 技巧 3: 根据域名判断
+
+优先读权威来源：
+
+```
+  1,...,https://docs.python.org/...     ← 官方，优先
+  2,...,https://realpython.com/...      ← 权威，优先
+  3,...,https://medium.com/...          ← 可能有用
+  4,...,https://unknown-blog.com/...    ← 谨慎
+```
+
+## 常见场景
+
+### 场景 A: 快速事实核查
+
+```
+search("Python 3.12 release date")
+→ 看预览，通常第一个结果就是答案
+→ Read file line 1
+→ 回答用户
+```
+
+### 场景 B: 深度研究
+
+```
+search("Python asyncio best practices", max_results=20)
+→ 看预览，标记相关结果 1, 2, 5, 8, 12
+→ Read file lines 1, 2, 5
+→ 分析后发现还需要 8, 12
+→ Read file lines 8, 12
+→ 综合回答
+```
+
+### 场景 C: 对比不同观点
+
+```
+search("asyncio vs threading python")
+→ 发现结果 3 支持 asyncio，结果 7 支持 threading
+→ Read file line 3
+→ Read file line 7
+→ 对比分析两种观点
+```
+
+### 场景 D: 问题排查
+
+```
+search("asyncio "Event loop is closed" error")
+→ 看预览，发现结果 2 和 4 都是关于这个错误的
+→ Read file line 2
+→ 如果不够，再读 line 4
+→ 给出解决方案
+```
+
+## 错误示范
+
+### ❌ 错误 1: 一上来就读整个文件
+
+```
+search("...")
+→ 收到 TOON 预览
+→ Read file xxx.txt  ← 错误！不要读整个文件
+```
+
+### ❌ 错误 2: 读不相关的结果
+
+```
+search("Python asyncio")
+→ 看到结果 5 是关于 "JavaScript async" 的（不相关）
+→ Read file line 5  ← 错误！不要读不相关的结果
+```
+
+### ❌ 错误 3: 重复读取
+
+```
+Read file line 1
+Read file line 1  ← 错误！已经读过了
+```
+
+## 文件格式说明
+
+view 文件是 JSONL 格式，每行一个完整的搜索结果：
+
+```json
+{"index": 1, "title": "...", "url": "...", "content": "...", "score": 0.95}
+{"index": 2, "title": "...", "url": "...", "content": "...", "score": 0.92}
+```
+
+字段说明：
+- `index`: 结果序号（从 1 开始）
+- `title`: 标题
+- `url`: 链接
+- `content`: 完整内容
+- `score`: 相关度分数（可选）
+- `published_date`: 发布日期（可选）
+- `author`: 作者（可选）
+
+## 总结
+
+记住三个原则：
+
+1. **先看预览，再决定读什么** - 不要一上来就读文件
+2. **只读相关的行** - 用 line 参数精确控制
+3. **分批读取，迭代深入** - 不要一次性读太多
+
+这样可以用最少的 Token 获取最有效的信息。

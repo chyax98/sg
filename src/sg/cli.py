@@ -3,7 +3,6 @@
 import asyncio
 import os
 import sys
-from pathlib import Path
 
 import click
 
@@ -62,7 +61,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
         import httpx
         try:
-            resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=2.0)
+            resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=30.0)
             if resp.status_code == 200:
                 click.echo("\n✓ Gateway started successfully!")
                 click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
@@ -136,25 +135,34 @@ def stop(port: int):
 
 
 def _print_result_file(data: dict) -> None:
-    """Print result file info with metadata and tool hints."""
-    path = Path(data["result_file"])
-    try:
-        text = path.read_text(encoding="utf-8")
-        size_kb = path.stat().st_size / 1024
-        lines = text.count("\n")
-        words = len(text.split())
+    """Print result as TOON format for LLM consumption."""
+    query = data.get("query", "")
+    result_file = data.get("result_file", "")
+    results = data.get("results", [])
+    total = data.get("total", 0)
 
-        click.echo(
-            f'query="{data["query"]}" results={data["total"]} '
-            f'file={path} ({size_kb:.1f}KB, {lines} lines, {words} words)'
-        )
+    click.echo(f"q: {query}")
+    click.echo(f"file: {result_file}")
+    click.echo("")
 
-        # Hint for large files
-        if size_kb > 50:
-            click.echo("💡 Tip: Use jq to filter large results")
+    preview_count = min(len(results), 5)
+    click.echo(f"results[{preview_count}]{{line,title,url,score}}:")
+    for i, r in enumerate(results[:preview_count], 1):
+        score = r.get("score", 0)
+        score_str = f"{score:.2f}" if score else "-"
+        title = r.get("title", "")[:50]
+        if len(r.get("title", "")) > 50:
+            title += "..."
+        url = r.get("url", "")
+        # line=i means read line i from the file
+        click.echo(f"  {i},{title},{url},{score_str}")
 
-    except OSError:
-        click.echo(f'query="{data["query"]}" file={data["result_file"]} (unreadable)')
+    if total > preview_count:
+        click.echo(f"  ... ({total - preview_count} more)")
+
+    click.echo("")
+    click.echo("To read specific results, read file lines:")
+    click.echo("  Line 1 = result [1], Line 2 = result [2], etc.")
 
 
 @cli.command()

@@ -1,11 +1,37 @@
 """MCP Server — expose gateway as MCP tools for LLMs."""
 
 import logging
-from pathlib import Path
 
 from fastmcp import FastMCP
 
+from ..models.search import SearchResponse
+
 logger = logging.getLogger(__name__)
+
+
+def _format_toon_preview(result: SearchResponse, max_preview: int = 5) -> str:
+    """Format search result as TOON for LLM tool response."""
+    lines = [
+        f"q: {result.query}",
+        f"file: {result.result_file}",
+        "",
+        f"results[{min(result.total, max_preview)}]{{line,title,url,score}}:",
+    ]
+
+    for i, r in enumerate(result.results[:max_preview], 1):
+        score_str = f"{r.score:.2f}" if r.score else "-"
+        title = r.title[:50] + "..." if len(r.title) > 50 else r.title
+        # line=i means read line i from the file
+        lines.append(f"  {i},{title},{r.url},{score_str}")
+
+    if result.total > max_preview:
+        lines.append(f"  ... ({result.total - max_preview} more)")
+
+    lines.append("")
+    lines.append("To read specific results, read file lines:")
+    lines.append("  Line 1 = result [1], Line 2 = result [2], etc.")
+
+    return "\n".join(lines)
 
 
 class MCPServer:
@@ -60,24 +86,21 @@ class MCPServer:
                        Supported params vary by provider - unsupported params are ignored
 
             Returns:
-                A string containing:
-                - Query, provider used, and result count
-                - File path where full results are saved
-                - File metadata: size (KB), line count, word count
+                TOON format string containing:
+                - Query and view file path
+                - Preview of top results with title, URL, score
 
                 Example output:
-                query="Python async" provider=exa results=10
-                file=/Users/xxx/.sg/history/2026-03/20260323-103045-abc123.json (12.4KB, 287 lines, 1823 words)
+                q: Python async
+                file: /Users/xxx/.sg/history/view/2026-03/1742752563408-e1.txt
 
-            Next steps after receiving results:
-            - For small files (<5KB): Read the entire file with the Read tool
-            - For medium files (5-50KB): Use jq to extract specific fields like titles and URLs
-            - For large files (>50KB): Use jq with array slicing to read first few results
+                results[5]{title,url,score}:
+                  1,Python Asyncio Docs,https://docs.python.org/3/library/asyncio.html,0.95
+                  2,...
 
-            Example follow-up commands:
-            - Read full results: Read the file path returned
-            - Extract titles/URLs: Use Bash with jq '.results[] | {title, url}' <file>
-            - Get first 5 results: Use Bash with jq '.results[0:5]' <file>
+            Next steps:
+            - Read the view file for full results
+            - Each result has [N] marker for easy navigation
             """
             result = await self.gateway.search(
                 query=query,
@@ -90,16 +113,7 @@ class MCPServer:
                 extra=extra or {},
             )
 
-            path = Path(result.result_file)
-            text = path.read_text(encoding="utf-8")
-            size_kb = path.stat().st_size / 1024
-            lines = text.count("\n")
-            words = len(text.split())
-
-            return (
-                f'query="{result.query}" provider={result.provider} results={result.total}\n'
-                f"file={result.result_file} ({size_kb:.1f}KB, {lines} lines, {words} words)"
-            )
+            return _format_toon_preview(result)
 
         @self.mcp.tool()
         async def extract(
@@ -134,11 +148,12 @@ class MCPServer:
 
                 If extraction fails for a URL, an error message is included instead.
 
-            Note: Content is returned directly (not saved to file like search results).
+            Note: Content is returned directly (also saved to file for record keeping).
             For very long pages, content may be truncated to first 5000 characters per URL.
             """
             result = await self.gateway.extract(urls=urls, format=format, extra=extra or {})
 
+            # Format content for display
             lines = []
             for r in result.results:
                 lines.append(f"=== {r.url} ===")
@@ -149,8 +164,18 @@ class MCPServer:
                 else:
                     lines.append(r.content[:5000])
                 lines.append("")
+            content = "\n".join(lines)
 
-            return "\n".join(lines)
+            # Save to view file (same structure as search)
+            await self.gateway.history.record_content(
+                operation="extract",
+                query=",".join(urls),
+                provider=result.provider,
+                latency_ms=result.latency_ms,
+                content=content,
+            )
+
+            return content
 
         @self.mcp.tool()
         async def research(
@@ -182,12 +207,21 @@ class MCPServer:
                 - Citations and source URLs
                 - Key insights and conclusions
 
-            Note: Research content is returned directly (not saved to file).
+            Note: Research content is returned directly (also saved to file for record keeping).
             This operation may take longer than simple search (10-30 seconds depending on depth).
             """
             result = await self.gateway.research(topic=topic, depth=depth)
-            content: str = result.content
-            return content
+
+            # Save to view file (same structure as search)
+            await self.gateway.history.record_content(
+                operation="research",
+                query=topic,
+                provider=result.provider,
+                latency_ms=result.latency_ms,
+                content=result.content,
+            )
+
+            return str(result.content)
 
         @self.mcp.tool()
         async def list_providers() -> str:

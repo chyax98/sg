@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class Gateway:
     """Search Gateway — unified search with failover."""
 
-    def __init__(self, config_path: str = "config.json", port: int | None = None):
+    def __init__(self, config_path: str | None = None, port: int | None = None):
         self.config_path = config_path
         self.config = GatewayConfig.load(config_path)
         self.port = port or self.config.server.port

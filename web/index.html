@@ -84,6 +84,32 @@ h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
 .dot-green { background: #4caf50; }
 .dot-red { background: #f44336; }
 
+/* History */
+.history-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; }
+.history-list-wrap, .history-detail { min-width: 0; }
+.history-item { width: 100%; text-align: left; background: #1a1a2e; }
+.history-item:hover { border-color: #3d6382; }
+.history-item.active { border-color: #00d4ff; background: #162535; box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.15) inset; }
+.history-item-title { font-size: 14px; font-weight: 600; color: #f3f7fb; margin-bottom: 6px; }
+.history-item-meta { color: #7f93a5; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.history-empty { text-align: center; color: #666; padding: 32px; }
+.history-detail-card { min-height: 360px; }
+.history-detail-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; }
+.history-detail-title { font-size: 18px; color: #f3f7fb; margin-bottom: 6px; }
+.history-detail-meta { color: #7f93a5; font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+.history-result { background: #0f0f23; border: 1px solid #2a2a4a; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.history-result-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.history-result-title a { color: #8cdcff; text-decoration: none; }
+.history-result-title a:hover { text-decoration: underline; }
+.history-result-url { color: #5cb97a; font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+.history-result-content { color: #cbd3da; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.history-result-meta { color: #7f93a5; font-size: 12px; margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+@media (max-width: 900px) {
+  .history-layout { grid-template-columns: 1fr; }
+  .history-detail-card { min-height: 0; }
+}
+
 /* Toast */
 .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: #2a2a4a; border-left: 3px solid #00d4ff; border-radius: 4px; font-size: 13px; z-index: 200; animation: fadeIn .3s; }
 .toast.error { border-left-color: #f44336; }
@@ -159,7 +185,12 @@ h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
       <span style="color:#888;font-size:13px;" id="historyCount"></span>
       <button class="btn btn-danger" onclick="clearHistory()">Clear History</button>
     </div>
-    <div id="historyList"></div>
+    <div class="history-layout">
+      <div class="history-list-wrap" id="historyList"></div>
+      <div class="history-detail" id="historyDetail">
+        <div class="card history-detail-card history-empty">Select a history entry to inspect results.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -233,6 +264,7 @@ let providerTypes = [];
 let config = null;
 let editingGroup = null;
 let editingInstance = null;
+let selectedHistoryId = null;
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -548,32 +580,87 @@ async function reloadConfig() {
 async function loadHistory() {
   try {
     const resp = await fetch(API + '/api/history?limit=50');
+    if (!resp.ok) throw new Error(await resp.text());
     const entries = await resp.json();
     document.getElementById('historyCount').textContent = entries.length + ' recent search(es)';
 
     if (!entries.length) {
       document.getElementById('historyList').innerHTML =
-        '<div class="card" style="text-align:center;color:#666;padding:32px;">No search history yet.</div>';
+        '<div class="card history-empty">No search history yet.</div>';
+      document.getElementById('historyDetail').innerHTML =
+        '<div class="card history-detail-card history-empty">Run a search first, then open the History tab.</div>';
+      selectedHistoryId = null;
       return;
     }
 
+    if (!selectedHistoryId || !entries.some(e => e.id === selectedHistoryId)) {
+      selectedHistoryId = entries[0].id;
+    }
+
     document.getElementById('historyList').innerHTML = entries.map(e => {
-      const ts = e.timestamp.slice(0, 19).replace('T', ' ');
-      return '<div class="card" style="padding:10px 16px;">' +
-        '<div style="display:flex;justify-content:space-between;">' +
-          '<span>' + esc(e.query) + '</span>' +
-          '<span class="card-meta">' + ts + '</span>' +
-        '</div>' +
-        '<div class="card-meta" style="margin-top:4px;">' +
+      const activeClass = e.id === selectedHistoryId ? ' active' : '';
+      return '<button type="button" class="card history-item' + activeClass + '" data-entry-id="' + esc(e.id) + '">' +
+        '<div class="history-item-title">' + esc(e.query) + '</div>' +
+        '<div class="history-item-meta">' +
           '<span>' + esc(e.provider) + '</span>' +
           '<span>' + e.total + ' results</span>' +
-          '<span>' + e.latency_ms.toFixed(0) + 'ms</span>' +
+          '<span>' + formatLatency(e.latency_ms) + '</span>' +
+          '<span>' + formatTimestamp(e.timestamp) + '</span>' +
         '</div>' +
-      '</div>';
+      '</button>';
     }).join('');
+
+    document.querySelectorAll('.history-item').forEach(el => {
+      el.addEventListener('click', () => openHistory(el.dataset.entryId));
+    });
+
+    await openHistory(selectedHistoryId, false);
   } catch(e) {
     document.getElementById('historyList').innerHTML =
       '<div class="card" style="color:#f44336;">Failed to load history.</div>';
+    document.getElementById('historyDetail').innerHTML =
+      '<div class="card history-detail-card history-empty" style="color:#f44336;">Failed to load history details.</div>';
+  }
+}
+
+async function openHistory(entryId, refreshSelection = true) {
+  if (!entryId) return;
+  selectedHistoryId = entryId;
+
+  if (refreshSelection) {
+    document.querySelectorAll('.history-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.entryId === entryId);
+    });
+  }
+
+  const detailEl = document.getElementById('historyDetail');
+  detailEl.innerHTML = '<div class="card history-detail-card history-empty">Loading history entry...</div>';
+
+  try {
+    const resp = await fetch(API + '/api/history/' + encodeURIComponent(entryId));
+    if (!resp.ok) throw new Error(await resp.text());
+    const entry = await resp.json();
+    const results = Array.isArray(entry.results) ? entry.results : [];
+
+    detailEl.innerHTML = '<div class="card history-detail-card">' +
+      '<div class="history-detail-header">' +
+        '<div>' +
+          '<div class="history-detail-title">' + esc(entry.query) + '</div>' +
+          '<div class="history-detail-meta">' +
+            '<span>ID: ' + esc(entry.id) + '</span>' +
+            '<span>Provider: ' + esc(entry.provider) + '</span>' +
+            '<span>Results: ' + entry.total + '</span>' +
+            '<span>Latency: ' + formatLatency(entry.latency_ms) + '</span>' +
+            '<span>Time: ' + formatTimestamp(entry.timestamp) + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      (results.length ? results.map((result, index) => renderHistoryResult(result, index)).join('') :
+        '<div class="history-empty" style="padding:24px 0;">This history entry has no stored results.</div>') +
+    '</div>';
+  } catch(e) {
+    detailEl.innerHTML =
+      '<div class="card history-detail-card history-empty" style="color:#f44336;">Failed to load this history entry.</div>';
   }
 }
 
@@ -581,12 +668,48 @@ async function clearHistory() {
   if (!confirm('Clear all search history?')) return;
   try {
     const resp = await fetch(API + '/api/history', { method: 'DELETE' });
+    if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
     toast('Cleared ' + data.deleted + ' entries');
+    selectedHistoryId = null;
     loadHistory();
   } catch(e) {
     toast('Error clearing history', true);
   }
+}
+
+function renderHistoryResult(result, index) {
+  const content = truncateText(result.content || result.snippet || '', 900);
+  const title = result.title || 'Untitled result';
+  const url = result.url || '';
+  const meta = [];
+  if (result.source) meta.push('<span>Source: ' + esc(result.source) + '</span>');
+  if (result.score) meta.push('<span>Score: ' + result.score + '</span>');
+  if (result.published_date) meta.push('<span>Published: ' + esc(result.published_date) + '</span>');
+
+  return '<div class="history-result">' +
+    '<div class="history-result-title">' + (url ?
+      '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + (index + 1) + '. ' + esc(title) + '</a>' :
+      (index + 1) + '. ' + esc(title)) + '</div>' +
+    (url ? '<div class="history-result-url">' + esc(url) + '</div>' : '') +
+    '<div class="history-result-content">' + (content ? esc(content) : '<span style="color:#666;">No preview content.</span>') + '</div>' +
+    (meta.length ? '<div class="history-result-meta">' + meta.join('') + '</div>' : '') +
+  '</div>';
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return 'Unknown time';
+  return ts.slice(0, 19).replace('T', ' ');
+}
+
+function formatLatency(latency) {
+  if (typeof latency !== 'number' || Number.isNaN(latency)) return 'N/A';
+  return latency.toFixed(0) + 'ms';
+}
+
+function truncateText(text, maxLength) {
+  if (!text || text.length <= maxLength) return text;
+  return text.slice(0, maxLength) + '...';
 }
 
 function esc(s) {

@@ -5,11 +5,11 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from ..models.config import InstanceSelection, ProviderDefaultsConfig, Strategy
@@ -106,12 +106,7 @@ class HTTPServer:
         self.app = FastAPI(title="Search Gateway")
         self._server: uvicorn.Server | None = None
 
-        self.app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        self._setup_security()
         self._setup_routes()
 
         # Mount MCP SSE if enabled
@@ -120,6 +115,27 @@ class HTTPServer:
             self._setup_mcp()
         else:
             logger.info("MCP is disabled")
+
+    def _setup_security(self) -> None:
+        @self.app.middleware("http")
+        async def protect_mutating_requests(request: Request, call_next):
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                origin = request.headers.get("origin")
+                if origin and not self._is_same_origin(origin, request):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Cross-origin browser requests are not allowed"},
+                    )
+            return await call_next(request)
+
+    @staticmethod
+    def _is_same_origin(origin: str, request: Request) -> bool:
+        """Allow browser writes only from the gateway's own origin."""
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        request_origin = f"{request.url.scheme}://{request.headers.get('host', '')}"
+        return origin == request_origin
 
     def _setup_routes(self):
         gw = self.gateway
@@ -385,4 +401,3 @@ class HTTPServer:
         # The SSE endpoint will be at /mcp/sse and messages at /mcp/message
         self.app.mount("/mcp", mcp_app)
         logger.info("MCP SSE endpoint mounted at /mcp/sse")
-
