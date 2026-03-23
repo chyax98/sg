@@ -90,17 +90,20 @@ class SearchClient:
     def list_providers(self) -> list[dict[str, Any]]:
         resp = self._client.get(f"{self.base_url}/providers")
         resp.raise_for_status()
-        return resp.json()
+        data: list[dict[str, Any]] = resp.json()
+        return data
 
     def get_status(self) -> dict[str, Any]:
         resp = self._client.get(f"{self.base_url}/status")
         resp.raise_for_status()
-        return resp.json()
+        data: dict[str, Any] = resp.json()
+        return data
 
     def health_check(self) -> dict[str, Any]:
         resp = self._client.post(f"{self.base_url}/health-check")
         resp.raise_for_status()
-        return resp.json()
+        data: dict[str, Any] = resp.json()
+        return data
 
     def close(self):
         self._client.close()
@@ -186,12 +189,14 @@ class AsyncSearchClient:
     async def list_providers(self) -> list[dict[str, Any]]:
         resp = await self._client.get(f"{self.base_url}/providers")
         resp.raise_for_status()
-        return resp.json()
+        data: list[dict[str, Any]] = resp.json()
+        return data
 
     async def get_status(self) -> dict[str, Any]:
         resp = await self._client.get(f"{self.base_url}/status")
         resp.raise_for_status()
-        return resp.json()
+        data: dict[str, Any] = resp.json()
+        return data
 
     async def close(self):
         await self._client.aclose()

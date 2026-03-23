@@ -53,6 +53,7 @@ class ExtractRequest(BaseModel):
     format: str = "markdown"
     extract_depth: str = "basic"
     query: str | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExtractResult(BaseModel):

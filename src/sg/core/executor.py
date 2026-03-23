@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import random
 import threading
 import time
 from collections.abc import Callable
@@ -11,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from ..models.config import ExecutorConfig, Strategy
+from ..models.config import ExecutorConfig
 from ..providers.base import BaseProvider, ProviderCapabilityError
 from ..providers.registry import ProviderRegistry
 from .circuit_breaker import CircuitBreaker, FailureType

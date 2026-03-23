@@ -3,6 +3,7 @@
 import json
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -148,12 +149,13 @@ class GatewayConfig(StrictConfigModel):
         return cls.model_validate(data)
 
     @classmethod
-    def load_raw(cls, path: str | None = None) -> dict:
+    def load_raw(cls, path: str | None = None) -> dict[str, Any]:
         config_path = resolve_config_path(path)
         if not config_path.exists():
             return {}
         with open(config_path) as f:
-            return json.load(f)
+            data: dict[str, Any] = json.load(f)
+            return data
 
     @staticmethod
     def save_raw(data: dict, path: str | None = None) -> None:

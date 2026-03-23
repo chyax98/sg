@@ -28,7 +28,7 @@ class DuckDuckGoProvider(SearchProvider):
         try:
             from ddgs import DDGS
         except ImportError:
-            from duckduckgo_search import DDGS
+            from duckduckgo_search import DDGS  # type: ignore[assignment]
         self._ddgs = DDGS()
         return True
 
@@ -50,7 +50,7 @@ class DuckDuckGoProvider(SearchProvider):
             kwargs["region"] = request.extra["region"]
 
         # DDGS.text() is synchronous — run in thread to avoid blocking
-        raw = await asyncio.to_thread(self._ddgs.text, request.query, **kwargs)
+        raw = await asyncio.to_thread(self._ddgs.text, request.query, **kwargs)  # type: ignore[union-attr]
 
         results = [
             SearchResult(

@@ -104,7 +104,7 @@ class HTTPServer:
         self.port = port
         self.host = host
         self.app = FastAPI(title="Search Gateway")
-        self._server = None
+        self._server: uvicorn.Server | None = None
 
         self.app.add_middleware(
             CORSMiddleware,
@@ -128,7 +128,7 @@ class HTTPServer:
 
         @self.app.get("/", response_class=HTMLResponse)
         async def root():
-            if WEB_UI_PATH.exists():
+            if WEB_UI_PATH and WEB_UI_PATH.exists():
                 return HTMLResponse(content=WEB_UI_PATH.read_text(), status_code=200)
             return HTMLResponse(content="<h1>Search Gateway</h1><p>Web UI not found</p>")
 

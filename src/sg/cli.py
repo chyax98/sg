@@ -64,10 +64,10 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
         try:
             resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=2.0)
             if resp.status_code == 200:
-                click.echo(f"\n✓ Gateway started successfully!")
+                click.echo("\n✓ Gateway started successfully!")
                 click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
                 click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-                click.echo(f"\n  Commands:  sg status | sg stop | sg web")
+                click.echo("\n  Commands:  sg status | sg stop | sg web")
                 click.echo(f"  Logs:      tail -f {log_file}\n")
             else:
                 click.echo(f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True)
@@ -87,7 +87,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
     async def run():
         from .server.gateway import Gateway
-        gateway = Gateway(config_path=config, port=port)
+        gateway = Gateway(config_path=config or "config.json", port=port)
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
@@ -111,7 +111,7 @@ def mcp(config: str | None):
         from .server.gateway import Gateway
         from .server.mcp_server import MCPServer
 
-        gateway = Gateway(config_path=config)
+        gateway = Gateway(config_path=config or "config.json")
         await gateway.providers.initialize()
 
         server = MCPServer(gateway)

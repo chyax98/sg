@@ -186,7 +186,8 @@ class MCPServer:
             This operation may take longer than simple search (10-30 seconds depending on depth).
             """
             result = await self.gateway.research(topic=topic, depth=depth)
-            return result.content
+            content: str = result.content
+            return content
 
         @self.mcp.tool()
         async def list_providers() -> str:
@@ -236,4 +237,4 @@ class MCPServer:
 
     async def run_http(self, host: str = "0.0.0.0", port: int = 8101):
         """Run MCP server in HTTP/SSE mode."""
-        await self.mcp.run_sse_async(host=host, port=port)
+        await self.mcp.run_sse_async(host=host, port=port)  # type: ignore[attr-defined]

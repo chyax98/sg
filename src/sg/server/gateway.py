@@ -89,7 +89,7 @@ class Gateway:
                 raise RuntimeError(f"{p.name} does not support search")
             return await p.search(request)
 
-        response = await self.executor.execute("search", op, provider=provider)
+        response: SearchResponse = await self.executor.execute("search", op, provider=provider)
         result_file = await self.history.record(request, response)
         response.result_file = result_file
         return response
