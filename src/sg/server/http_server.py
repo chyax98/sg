@@ -77,7 +77,6 @@ class ProviderInstanceBody(BaseModel):
 
 class SettingsBody(BaseModel):
     strategy: Strategy | None = None
-    history_enabled: bool | None = None
 
 
 class HTTPServer:
@@ -294,8 +293,6 @@ class HTTPServer:
             raw = gw.get_config_raw()
             if body.strategy is not None:
                 raw.setdefault("executor", {})["strategy"] = body.strategy.value
-            if body.history_enabled is not None:
-                raw.setdefault("history", {})["enabled"] = body.history_enabled
             gw.save_config_raw(raw)
             return {"status": "ok"}
 

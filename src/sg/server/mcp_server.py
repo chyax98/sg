@@ -1,6 +1,7 @@
 """MCP Server — expose gateway as MCP tools for LLMs."""
 
 import logging
+from pathlib import Path
 
 from fastmcp import FastMCP
 
@@ -50,17 +51,16 @@ class MCPServer:
                 search_depth=search_depth,
             )
 
-            lines = [f"Search: {result.query} (via {result.provider}, {result.latency_ms:.0f}ms)"]
-            lines.append(f"{result.total} results\n")
+            path = Path(result.result_file)
+            text = path.read_text(encoding="utf-8")
+            size_kb = path.stat().st_size / 1024
+            lines = text.count("\n")
+            words = len(text.split())
 
-            for i, r in enumerate(result.results, 1):
-                lines.append(f"[{i}] {r.title}")
-                lines.append(f"    {r.url}")
-                if r.content:
-                    lines.append(f"    {r.content[:300]}")
-                lines.append("")
-
-            return "\n".join(lines)
+            return (
+                f'query="{result.query}" provider={result.provider} results={result.total}\n'
+                f"file={result.result_file} ({size_kb:.1f}KB, {lines} lines, {words} words)"
+            )
 
         @self.mcp.tool()
         async def extract(
@@ -110,7 +110,7 @@ class MCPServer:
             lines = ["Search Gateway Providers:"]
             for p in providers:
                 status = "OK" if p.healthy else "DOWN"
-                fallback = " (fallback)" if p.is_fallback else ""
+                fallback = f" (fallback: {','.join(p.fallback_for)})" if p.fallback_for else ""
                 lines.append(f"  [{status}] {p.name} ({p.type}){fallback}")
                 lines.append(f"      Capabilities: {', '.join(p.capabilities)}")
                 lines.append(f"      Priority: {p.priority}")

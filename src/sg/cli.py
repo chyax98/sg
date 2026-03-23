@@ -1,7 +1,6 @@
 """CLI — command line interface for Search Gateway."""
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -32,7 +31,7 @@ def start(port: int, config: str):
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-        click.echo(f"\n  Commands:  sg search 'query' | sg status | sg stop\n")
+        click.echo("\n  Commands:  sg search 'query' | sg status | sg stop\n")
         await gateway.wait_shutdown()
 
     try:
@@ -222,7 +221,7 @@ def status(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nSearch Gateway Status\n")
+        click.echo("\nSearch Gateway Status\n")
         click.echo(f"  Running:   {data['running']}")
         click.echo(f"  Port:      {data['port']}")
         click.echo(f"  Strategy:  {data.get('strategy', 'N/A')}")
@@ -258,7 +257,7 @@ def providers(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nAvailable Providers\n")
+        click.echo("\nAvailable Providers\n")
         for p in data:
             status_icon = "+" if p.get("circuit_breaker", "closed") != "open" else "-"
             fallback = f" (fallback: {','.join(p['fallback_for'])})" if p.get("fallback_for") else ""
@@ -290,7 +289,7 @@ def health(port: int):
         resp.raise_for_status()
         data = resp.json()
 
-        click.echo(f"\nHealth Check Results\n")
+        click.echo("\nHealth Check Results\n")
         click.echo(f"  Healthy:   {', '.join(data['healthy']) or 'None'}")
         unhealthy_names = [u['name'] if isinstance(u, dict) else u for u in data.get('unhealthy', [])]
         click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
@@ -348,7 +347,7 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
         for e in entries:
             ts = e["timestamp"][:19].replace("T", " ")
             click.echo(f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)")
-        click.echo(f"\nUse 'sg history <id>' to see full results.")
+        click.echo("\nUse 'sg history <id>' to see full results.")
 
     except httpx.ConnectError:
         click.echo("Gateway not running. Start with 'sg start'", err=True)
