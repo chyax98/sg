@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,22 @@ from ..providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
-WEB_UI_PATH = Path(__file__).parent.parent.parent.parent / "web" / "index.html"
+# Try multiple locations for Web UI
+def _find_web_ui() -> Path | None:
+    # Development mode: relative to source
+    dev_path = Path(__file__).parent.parent.parent.parent / "web" / "index.html"
+    if dev_path.exists():
+        return dev_path
+
+    # Installed mode: in share directory
+    if sys.prefix:
+        installed_path = Path(sys.prefix) / "share" / "search-gateway" / "web" / "index.html"
+        if installed_path.exists():
+            return installed_path
+
+    return None
+
+WEB_UI_PATH = _find_web_ui()
 
 
 # === Request bodies ===

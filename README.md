@@ -77,17 +77,47 @@ Search Gateway 提供 MCP (Model Context Protocol) 服务器，可以集成到 C
 
 **优势**：Gateway 持续运行，providers 只初始化一次，多个客户端可以共享同一个 gateway 实例。
 
+**步骤：**
+
 1. 启动 gateway 服务器：
 ```bash
 sg start
 ```
 
-2. 找到配置文件：
+2. **Claude Code 用户（推荐使用命令行配置）**：
+
+```bash
+# 方法 1：使用 claude mcp add 命令（推荐）
+# 注意：必须指定 transport 为 sse，不要使用 --transport 参数
+claude mcp add search-gateway sse http://127.0.0.1:8100/mcp/sse
+
+# 方法 2：手动编辑配置文件
+# 编辑 ~/.claude.json，在当前项目的 mcpServers 中添加：
+```
+
+```json
+{
+  "projects": {
+    "/your/project/path": {
+      "mcpServers": {
+        "search-gateway": {
+          "type": "sse",
+          "url": "http://127.0.0.1:8100/mcp/sse"
+        }
+      }
+    }
+  }
+}
+```
+
+3. **Claude Desktop 用户**：
+
+找到配置文件：
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - Linux: `~/.config/Claude/claude_desktop_config.json`
 
-3. 添加配置：
+添加配置：
 ```json
 {
   "mcpServers": {
@@ -100,11 +130,25 @@ sg start
 
 4. 重启 Claude Desktop/Code
 
+**⚠️ 常见错误**：
+- ❌ 不要使用 `claude mcp add --transport http`（会导致配置错误）
+- ❌ 不要配置为 `"type": "http"`（Search Gateway 使用 SSE，不是 HTTP OAuth）
+- ✅ 正确配置：`"type": "sse"` 或使用命令 `claude mcp add search-gateway sse <url>`
+
 #### 方式二：stdio 模式
 
-**优势**：简单，无需启动服务器，适合临时使用。
+**优势**：简单，无需启动服务器，适合临时使用。每次调用会启动新的 gateway 实例。
 
-配置 Claude Desktop/Code：
+**Claude Code 用户（推荐使用命令行配置）**：
+
+```bash
+# 使用 claude mcp add 命令
+claude mcp add search-gateway stdio sg mcp
+
+# 或手动编辑 ~/.claude.json
+```
+
+**配置文件方式**：
 ```json
 {
   "mcpServers": {
