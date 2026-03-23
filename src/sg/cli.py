@@ -116,7 +116,8 @@ def search(
             )
             resp.raise_for_status()
             data = resp.json()
-            click.echo(data["result_file"])
+            click.echo(f'Search results for "{queries[0]}" saved to: {data["result_file"]}')
+            click.echo(f"Use Read tool to view the full results.")
         else:
             resp = httpx.post(
                 f"http://127.0.0.1:{port}/search/batch",
@@ -124,8 +125,10 @@ def search(
                 timeout=60.0,
             )
             resp.raise_for_status()
+            click.echo(f"Batch search complete. {len(queries)} queries saved:")
             for data in resp.json():
-                click.echo(data["result_file"])
+                click.echo(f'  "{data["query"]}" -> {data["result_file"]}')
+            click.echo("Use Read tool on each path to view results.")
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
