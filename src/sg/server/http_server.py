@@ -1,7 +1,6 @@
-"""HTTP Server - REST API for search gateway."""
+"""HTTP Server — REST API for search gateway."""
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -12,10 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from ..providers.registry import ProviderRegistry
+
 logger = logging.getLogger(__name__)
 
 WEB_UI_PATH = Path(__file__).parent.parent.parent.parent / "web" / "index.html"
 
+
+# === Request bodies ===
 
 class SearchBody(BaseModel):
     query: str
@@ -24,6 +27,7 @@ class SearchBody(BaseModel):
     include_domains: list[str] = []
     exclude_domains: list[str] = []
     time_range: str | None = None
+    search_depth: str = "basic"
     extra: dict[str, Any] = {}
 
 
@@ -53,17 +57,17 @@ class ProviderBody(BaseModel):
 
 class SettingsBody(BaseModel):
     strategy: str | None = None
-    mcp_enabled: bool | None = None
     history_enabled: bool | None = None
 
 
 class HTTPServer:
     """HTTP REST API server."""
 
-    def __init__(self, gateway, port: int):
+    def __init__(self, gateway, port: int, host: str = "127.0.0.1"):
         self.gateway = gateway
         self.port = port
-        self.app = FastAPI(title="Search Gateway", version="2.0.0")
+        self.host = host
+        self.app = FastAPI(title="Search Gateway", version="3.0.0")
         self._server = None
 
         self.app.add_middleware(
@@ -75,27 +79,29 @@ class HTTPServer:
         self._setup_routes()
 
     def _setup_routes(self):
+        gw = self.gateway
+
         # === Web UI ===
+
         @self.app.get("/", response_class=HTMLResponse)
         async def root():
             if WEB_UI_PATH.exists():
                 return HTMLResponse(content=WEB_UI_PATH.read_text(), status_code=200)
             return HTMLResponse(content="<h1>Search Gateway</h1><p>Web UI not found</p>")
 
-        # === Search API ===
-        @self.app.get("/api")
-        async def api_info():
-            return {"name": "Search Gateway", "version": "2.0.0"}
+        # === Core API ===
 
         @self.app.post("/search")
         async def search(body: SearchBody):
             try:
-                result = await self.gateway.search(
+                result = await gw.search(
                     query=body.query, provider=body.provider,
                     max_results=body.max_results,
                     include_domains=body.include_domains,
                     exclude_domains=body.exclude_domains,
-                    time_range=body.time_range, extra=body.extra,
+                    time_range=body.time_range,
+                    search_depth=body.search_depth,
+                    extra=body.extra,
                 )
                 return result.model_dump()
             except Exception as e:
@@ -105,7 +111,7 @@ class HTTPServer:
         @self.app.post("/extract")
         async def extract(body: ExtractBody):
             try:
-                result = await self.gateway.extract(
+                result = await gw.extract(
                     urls=body.urls, provider=body.provider,
                     format=body.format, extract_depth=body.extract_depth,
                 )
@@ -117,7 +123,7 @@ class HTTPServer:
         @self.app.post("/research")
         async def research(body: ResearchBody):
             try:
-                result = await self.gateway.research(
+                result = await gw.research(
                     topic=body.topic, depth=body.depth, provider=body.provider,
                 )
                 return result.model_dump()
@@ -125,22 +131,34 @@ class HTTPServer:
                 logger.error(f"Research error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
+        # === Operational API ===
+
         @self.app.get("/providers")
         async def list_providers():
-            providers = await self.gateway.list_providers()
-            return [p.model_dump() for p in providers]
+            providers = await gw.list_providers()
+            result = []
+            for p in providers:
+                d = p.model_dump()
+                breaker = gw.executor.get_breaker_status(p.name)
+                d["circuit_breaker"] = breaker["state"]
+                d["healthy"] = breaker["state"] != "open"
+                d["disabled_seconds_remaining"] = breaker["remaining_disabled_seconds"]
+                d["last_failure_type"] = breaker["last_failure_type"]
+                d["trip_count"] = breaker["trip_count"]
+                result.append(d)
+            return result
 
         @self.app.get("/status")
         async def get_status():
-            return await self.gateway.get_status()
+            return await gw.get_status()
 
         @self.app.post("/health-check")
         async def health_check():
-            return await self.gateway.health_check()
+            return await gw.health_check()
 
         @self.app.get("/metrics")
         async def get_metrics():
-            return self.gateway.load_balancer.get_metrics()
+            return gw.executor.get_metrics()
 
         @self.app.post("/shutdown")
         async def shutdown():
@@ -148,95 +166,76 @@ class HTTPServer:
             return {"status": "shutting down"}
 
         # === Config API ===
+
         @self.app.get("/api/config")
         async def get_config():
-            """Get raw config (without env var expansion)."""
-            return self.gateway.get_config_raw()
+            return gw.get_config_raw()
 
         @self.app.get("/api/provider-types")
         async def get_provider_types():
-            """List available provider types."""
-            return self.gateway.get_provider_types()
+            return ProviderRegistry.get_provider_types()
 
         @self.app.put("/api/config/providers/{instance_id}")
         async def upsert_provider(instance_id: str, body: ProviderBody):
-            """Add or update a provider instance."""
-            raw = self.gateway.get_config_raw()
-            if "providers" not in raw:
-                raw["providers"] = {}
-
-            raw["providers"][instance_id] = {
+            raw = gw.get_config_raw()
+            raw.setdefault("providers", {})[instance_id] = {
                 "type": body.type,
                 "enabled": body.enabled,
                 "priority": body.priority,
                 "timeout": body.timeout,
                 "is_fallback": body.is_fallback,
+                **({"api_key": body.api_key} if body.api_key is not None else {}),
+                **({"url": body.url} if body.url is not None else {}),
+                **({"env": body.env} if body.env else {}),
             }
-            if body.api_key is not None:
-                raw["providers"][instance_id]["api_key"] = body.api_key
-            if body.url is not None:
-                raw["providers"][instance_id]["url"] = body.url
-            if body.env:
-                raw["providers"][instance_id]["env"] = body.env
-
-            self.gateway.save_config_raw(raw)
+            gw.save_config_raw(raw)
             return {"status": "ok", "instance_id": instance_id}
 
         @self.app.delete("/api/config/providers/{instance_id}")
         async def delete_provider(instance_id: str):
-            """Delete a provider instance."""
-            raw = self.gateway.get_config_raw()
+            raw = gw.get_config_raw()
             providers = raw.get("providers", {})
             if instance_id not in providers:
                 raise HTTPException(status_code=404, detail=f"Provider '{instance_id}' not found")
-
             del providers[instance_id]
-            self.gateway.save_config_raw(raw)
+            gw.save_config_raw(raw)
             return {"status": "ok", "deleted": instance_id}
 
         @self.app.put("/api/config/settings")
         async def update_settings(body: SettingsBody):
-            """Update general settings."""
-            raw = self.gateway.get_config_raw()
-
+            raw = gw.get_config_raw()
             if body.strategy is not None:
-                raw.setdefault("load_balancer", {})["strategy"] = body.strategy
-            if body.mcp_enabled is not None:
-                raw.setdefault("mcp", {})["enabled"] = body.mcp_enabled
+                raw.setdefault("executor", {})["strategy"] = body.strategy
             if body.history_enabled is not None:
                 raw.setdefault("history", {})["enabled"] = body.history_enabled
-
-            self.gateway.save_config_raw(raw)
+            gw.save_config_raw(raw)
             return {"status": "ok"}
 
         @self.app.post("/api/config/reload")
         async def reload_config():
-            """Reload config and reinitialize providers."""
             try:
-                await self.gateway.reload_config()
+                await gw.reload_config()
                 return {"status": "ok"}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
         # === History API ===
+
         @self.app.get("/api/history")
         async def list_history(limit: int = 50, offset: int = 0):
-            """List recent searches."""
-            entries = await self.gateway.history.list(limit=limit, offset=offset)
+            entries = await gw.history.list(limit=limit, offset=offset)
             return [e.model_dump() for e in entries]
 
         @self.app.get("/api/history/{entry_id}")
         async def get_history_entry(entry_id: str):
-            """Get single history entry with full results."""
-            entry = await self.gateway.history.get(entry_id)
+            entry = await gw.history.get(entry_id)
             if not entry:
                 raise HTTPException(status_code=404, detail="Entry not found")
             return entry.model_dump()
 
         @self.app.delete("/api/history")
         async def clear_history():
-            """Clear all history."""
-            count = await self.gateway.history.clear()
+            count = await gw.history.clear()
             return {"status": "ok", "deleted": count}
 
     async def _delayed_shutdown(self):
@@ -244,17 +243,16 @@ class HTTPServer:
         await self.gateway.stop()
 
     async def start(self):
-        import logging
         logging.getLogger("uvicorn").setLevel(logging.ERROR)
         logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
         logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 
         config = uvicorn.Config(
-            self.app, host="0.0.0.0", port=self.port, log_level="error",
+            self.app, host=self.host, port=self.port, log_level="error",
         )
         self._server = uvicorn.Server(config)
         asyncio.create_task(self._server.serve())
-        logger.info(f"HTTP server started on port {self.port}")
+        logger.info(f"HTTP server on {self.host}:{self.port}")
 
     async def stop(self):
         if self._server:

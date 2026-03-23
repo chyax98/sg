@@ -1,9 +1,6 @@
 """Tests for SearchHistory."""
 
-import json
 import pytest
-import tempfile
-from pathlib import Path
 
 from sg.core.history import SearchHistory
 from sg.models.config import HistoryConfig
@@ -44,7 +41,6 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_record_and_list(self, history, sample_request, sample_response):
-        """Record a search and list it."""
         entry_id = await history.record(sample_request, sample_response)
         assert entry_id is not None
 
@@ -56,7 +52,6 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_get_full_entry(self, history, sample_request, sample_response):
-        """Get full entry with results."""
         entry_id = await history.record(sample_request, sample_response)
         entry = await history.get(entry_id)
 
@@ -68,7 +63,6 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_list_pagination(self, history, sample_request, sample_response):
-        """Test list with limit and offset."""
         for _ in range(5):
             await history.record(sample_request, sample_response)
 
@@ -83,7 +77,6 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_clear(self, history, sample_request, sample_response):
-        """Test clearing history."""
         await history.record(sample_request, sample_response)
         await history.record(sample_request, sample_response)
 
@@ -95,7 +88,6 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_disabled_history(self, history_dir):
-        """Disabled history doesn't record."""
         config = HistoryConfig(enabled=False, dir=history_dir)
         history = SearchHistory(config)
 
@@ -106,12 +98,10 @@ class TestSearchHistory:
 
     @pytest.mark.asyncio
     async def test_get_nonexistent(self, history):
-        """Get nonexistent entry returns None."""
         result = await history.get("nonexistent-id")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_clear_empty(self, history):
-        """Clear empty history returns 0."""
         count = await history.clear()
         assert count == 0

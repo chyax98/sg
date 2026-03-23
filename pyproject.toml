@@ -1,16 +1,20 @@
 [project]
 name = "search-gateway"
-version = "2.0.0"
-description = "Unified search gateway with load balancing and routing"
+version = "3.0.0"
+description = "Unified search gateway with failover across multiple providers"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.100.0",
     "fastmcp>=0.1.0",
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "click>=8.0.0",
     "uvicorn>=0.30.0",
     "ddgs>=0.1.0",
+    "tavily-python>=0.5.0",
+    "exa-py>=2.0.0",
+    "firecrawl-py>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +37,6 @@ packages = ["src/sg"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

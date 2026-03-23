@@ -13,7 +13,7 @@ class SearchRequest(BaseModel):
     include_domains: list[str] = []
     exclude_domains: list[str] = []
     time_range: str | None = None  # day, week, month, year
-    search_depth: str = "basic"  # basic, advanced
+    search_depth: str = "basic"  # basic, advanced, fast, ultra-fast
     extra: dict[str, Any] = {}
 
 
@@ -24,7 +24,7 @@ class SearchResult(BaseModel):
     content: str = ""
     snippet: str = ""
     score: float = 0.0
-    source: str  # provider instance id
+    source: str
     published_date: str | None = None
     author: str | None = None
     raw_content: str | None = None
@@ -44,7 +44,6 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
     total: int
     latency_ms: float
-    cached: bool = False
 
 
 class ExtractRequest(BaseModel):
@@ -87,19 +86,18 @@ class ResearchResponse(BaseModel):
 
 
 class ProviderStatus(BaseModel):
-    """Provider status."""
+    """Provider status for API responses."""
     name: str
     type: str = ""
     enabled: bool
     healthy: bool
     capabilities: list[str]
+    search_features: list[str] = []
     priority: int
     is_fallback: bool
-    last_check: float | None = None
+    circuit_breaker: str = "closed"
     latency_ms: float | None = None
     error: str | None = None
-    requests_today: int = 0
-    failures_today: int = 0
 
 
 class HistoryEntry(BaseModel):

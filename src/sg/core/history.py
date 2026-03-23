@@ -1,5 +1,6 @@
-"""Search history - filesystem-backed storage."""
+"""Search history — filesystem-backed, non-blocking I/O."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class SearchHistory:
-    """Filesystem-backed search history."""
+    """Filesystem-backed search history with async I/O."""
 
     def __init__(self, config: HistoryConfig):
         self.enabled = config.enabled
@@ -21,13 +22,12 @@ class SearchHistory:
         self.max_entries = config.max_entries
 
     def _ensure_dir(self, subdir: str = "") -> Path:
-        """Ensure directory exists and return it."""
         d = self.dir / subdir if subdir else self.dir
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     async def record(self, request: SearchRequest, response: SearchResponse) -> str | None:
-        """Save search + results. Returns entry ID."""
+        """Save search result. Returns entry ID."""
         if not self.enabled:
             return None
 
@@ -46,21 +46,24 @@ class SearchHistory:
         }
 
         filepath = month_dir / f"{entry_id}.json"
-        filepath.write_text(json.dumps(entry, ensure_ascii=False, indent=2))
+        content = json.dumps(entry, ensure_ascii=False, indent=2)
+        await asyncio.to_thread(filepath.write_text, content)
         return entry_id
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[HistoryEntry]:
-        """List recent searches (without full results)."""
+        """List recent entries (without full results)."""
         if not self.dir.exists():
             return []
 
-        # Collect all json files, sorted by name (timestamp) descending
-        files = sorted(self.dir.rglob("*.json"), reverse=True)
+        files = await asyncio.to_thread(
+            lambda: sorted(self.dir.rglob("*.json"), reverse=True)
+        )
         entries = []
 
         for f in files[offset:offset + limit]:
             try:
-                data = json.loads(f.read_text())
+                text = await asyncio.to_thread(f.read_text)
+                data = json.loads(text)
                 entries.append(HistoryEntry(
                     id=data["id"],
                     query=data["query"],
@@ -76,13 +79,17 @@ class SearchHistory:
         return entries
 
     async def get(self, entry_id: str) -> HistoryEntry | None:
-        """Get full search entry by ID."""
+        """Get full entry by ID."""
         if not self.dir.exists():
             return None
 
-        for f in self.dir.rglob(f"{entry_id}.json"):
+        files = await asyncio.to_thread(
+            lambda: list(self.dir.rglob(f"{entry_id}.json"))
+        )
+        for f in files:
             try:
-                data = json.loads(f.read_text())
+                text = await asyncio.to_thread(f.read_text)
+                data = json.loads(text)
                 return HistoryEntry.model_validate(data)
             except (json.JSONDecodeError, KeyError):
                 return None
@@ -93,14 +100,14 @@ class SearchHistory:
         if not self.dir.exists():
             return 0
 
-        count = 0
-        for f in self.dir.rglob("*.json"):
-            f.unlink()
-            count += 1
+        def _do_clear():
+            count = 0
+            for f in self.dir.rglob("*.json"):
+                f.unlink()
+                count += 1
+            for d in sorted(self.dir.iterdir(), reverse=True):
+                if d.is_dir() and not any(d.iterdir()):
+                    d.rmdir()
+            return count
 
-        # Clean up empty month directories
-        for d in sorted(self.dir.iterdir(), reverse=True):
-            if d.is_dir() and not any(d.iterdir()):
-                d.rmdir()
-
-        return count
+        return await asyncio.to_thread(_do_clear)

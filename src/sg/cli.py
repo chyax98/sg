@@ -1,4 +1,4 @@
-"""CLI - Command line interface for search gateway."""
+"""CLI — command line interface for Search Gateway."""
 
 import asyncio
 import json
@@ -10,17 +10,16 @@ import click
 
 
 @click.group()
-@click.version_option(version="2.0.0")
+@click.version_option(version="3.0.0")
 def cli():
-    """Search Gateway - Unified search with load balancing."""
+    """Search Gateway — unified search with failover."""
     pass
 
 
 @cli.command()
 @click.option("--port", "-p", default=8100, help="Gateway port")
 @click.option("--config", "-c", default="config.json", help="Config file path")
-@click.option("--daemon", "-d", is_flag=True, help="Run as daemon")
-def start(port: int, config: str, daemon: bool):
+def start(port: int, config: str):
     """Start the gateway server."""
     import warnings
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
@@ -44,6 +43,29 @@ def start(port: int, config: str, daemon: bool):
 
 
 @cli.command()
+@click.option("--config", "-c", default="config.json", help="Config file path")
+def mcp(config: str):
+    """Start MCP server in stdio mode (for Claude Desktop)."""
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    async def run():
+        from .server.gateway import Gateway
+        from .server.mcp_server import MCPServer
+
+        gateway = Gateway(config_path=config)
+        await gateway.providers.initialize()
+
+        server = MCPServer(gateway)
+        await server.run_stdio()
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        pass
+
+
+@cli.command()
 @click.option("--port", "-p", default=8100, help="Gateway port")
 def stop(port: int):
     """Stop the gateway server."""
@@ -59,15 +81,37 @@ def stop(port: int):
 @click.argument("query")
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
+@click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
+@click.option("--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search")
+@click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
+@click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
 @click.option("--format", "-f", default="text", type=click.Choice(["text", "json", "markdown"]))
 @click.option("--port", default=8100, help="Gateway port")
-def search(query: str, provider: str | None, max: int, format: str, port: int):
+def search(
+    query: str,
+    provider: str | None,
+    max: int,
+    include_domains: tuple[str, ...],
+    exclude_domains: tuple[str, ...],
+    time_range: str | None,
+    search_depth: str,
+    format: str,
+    port: int,
+):
     """Execute a search query."""
     import httpx
     try:
         resp = httpx.post(
             f"http://127.0.0.1:{port}/search",
-            json={"query": query, "provider": provider, "max_results": max},
+            json={
+                "query": query,
+                "provider": provider,
+                "max_results": max,
+                "include_domains": list(include_domains),
+                "exclude_domains": list(exclude_domains),
+                "time_range": time_range,
+                "search_depth": search_depth,
+            },
             timeout=30.0,
         )
         resp.raise_for_status()
@@ -170,16 +214,23 @@ def status(port: int):
         click.echo(f"  Running:   {data['running']}")
         click.echo(f"  Port:      {data['port']}")
         click.echo(f"  Strategy:  {data.get('strategy', 'N/A')}")
-        click.echo(f"  MCP:       {'on' if data.get('mcp_enabled') else 'off'}")
         click.echo(f"  History:   {'on' if data.get('history_enabled') else 'off'}")
-        click.echo(f"  Providers: {data['providers']['healthy']}/{data['providers']['total']} healthy")
+        click.echo(f"  Providers: {len(data['providers']['available'])} available")
         click.echo(f"  Available: {', '.join(data['providers']['available'])}")
 
         if data.get("metrics"):
             click.echo("\n  Metrics:")
             for name, m in data["metrics"].items():
-                click.echo(f"    {name}: {m['successes']}/{m['requests']} success, "
-                          f"{m['avg_latency_ms']:.0f}ms avg")
+                cb = f" [{m.get('circuit_breaker', 'closed')}]" if m.get('circuit_breaker') != 'closed' else ""
+                extra = ""
+                if m.get("disabled_seconds_remaining"):
+                    extra = f", retry in {m['disabled_seconds_remaining']}s"
+                if m.get("last_failure_type") and m.get("last_failure_type") != "transient":
+                    extra += f", reason={m['last_failure_type']}"
+                click.echo(
+                    f"    {name}: {m['successes']}/{m['requests']} success, "
+                    f"{m['avg_latency_ms']:.0f}ms avg{cb}{extra}"
+                )
 
     except httpx.ConnectError:
         click.echo("Gateway not running. Start with 'sg start'", err=True)
@@ -198,12 +249,19 @@ def providers(port: int):
 
         click.echo(f"\nAvailable Providers\n")
         for p in data:
-            status_icon = "+" if p["healthy"] else "-"
+            status_icon = "+" if p.get("circuit_breaker", "closed") != "open" else "-"
             fallback = " (fallback)" if p["is_fallback"] else ""
             ptype = f" [{p.get('type', '')}]" if p.get("type") else ""
-            click.echo(f"  {status_icon} {p['name']}{ptype}{fallback}")
+            cb = f" [circuit: {p['circuit_breaker']}]" if p.get("circuit_breaker") != "closed" else ""
+            click.echo(f"  {status_icon} {p['name']}{ptype}{fallback}{cb}")
             click.echo(f"      Capabilities: {', '.join(p['capabilities'])}")
+            if p.get("search_features"):
+                click.echo(f"      Search params: {', '.join(p['search_features'])}")
             click.echo(f"      Priority: {p['priority']}")
+            if p.get("disabled_seconds_remaining"):
+                click.echo(f"      Retry in: {p['disabled_seconds_remaining']}s")
+            if p.get("last_failure_type") and p.get("last_failure_type") != "transient":
+                click.echo(f"      Last failure: {p['last_failure_type']}")
             click.echo()
 
     except httpx.ConnectError:
@@ -223,7 +281,8 @@ def health(port: int):
 
         click.echo(f"\nHealth Check Results\n")
         click.echo(f"  Healthy:   {', '.join(data['healthy']) or 'None'}")
-        click.echo(f"  Unhealthy: {', '.join(data['unhealthy']) or 'None'}")
+        unhealthy_names = [u['name'] if isinstance(u, dict) else u for u in data.get('unhealthy', [])]
+        click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
 
     except httpx.ConnectError:
         click.echo("Gateway not running. Start with 'sg start'", err=True)

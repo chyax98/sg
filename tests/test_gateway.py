@@ -1,131 +1,198 @@
-"""Integration tests for Gateway."""
+"""Tests for Gateway with v3.0 architecture (executor-based)."""
 
 import pytest
-import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from sg.server.gateway import Gateway
-from sg.models.search import SearchRequest
+from sg.core.executor import Executor
+from sg.providers.registry import ProviderRegistry
+from sg.models.config import GatewayConfig, ExecutorConfig, Strategy
+from sg.models.search import SearchResponse, SearchResult
 
 
-@pytest.fixture(scope="module")
-def event_loop():
-    """Create event loop for module."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+class TestGatewayInit:
+
+    def test_gateway_creates_executor(self, tmp_path):
+        """Gateway creates an Executor (not router + load_balancer)."""
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
+
+        gw = Gateway(config_path=str(config_file), port=19000)
+        assert hasattr(gw, "executor")
+        assert isinstance(gw.executor, Executor)
+        assert not hasattr(gw, "router")
+        assert not hasattr(gw, "load_balancer")
+
+    def test_gateway_uses_executor_config(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0", "executor": {"strategy": "random"}}')
+
+        gw = Gateway(config_path=str(config_file), port=19001)
+        assert gw.config.executor.strategy == Strategy.RANDOM
+
+    def test_gateway_port_override(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0", "server": {"port": 9000}}')
+
+        gw = Gateway(config_path=str(config_file), port=19002)
+        assert gw.port == 19002
 
 
-class TestGatewayIntegration:
-    """Integration tests for Gateway."""
-
-    @pytest.mark.asyncio
-    async def test_gateway_starts_and_stops(self):
-        """Test gateway can start and stop."""
-        gw = Gateway(port=18101)
-        await gw.start()
-        assert gw._running is True
-        await gw.stop()
-        assert gw._running is False
-
-    @pytest.mark.asyncio
-    async def test_search_with_duckduckgo(self):
-        """Test search using fallback provider."""
-        gw = Gateway(port=18102)
-        await gw.start()
-        await asyncio.sleep(0.5)
-
-        try:
-            result = await gw.search(
-                query="Python programming",
-                max_results=3
-            )
-
-            assert result.query == "Python programming"
-            # Provider depends on config, just verify we got results
-            assert result.total >= 0
-            assert result.provider in ["duckduckgo", "youcom", "firecrawl-1", "firecrawl-2"]
-        finally:
-            await gw.stop()
+class TestGatewaySearch:
 
     @pytest.mark.asyncio
-    async def test_search_with_provider_override(self):
-        """Test search with specific provider."""
-        gw = Gateway(port=18103)
-        await gw.start()
-        await asyncio.sleep(0.5)
+    async def test_search_delegates_to_executor(self, tmp_path):
+        """search() calls executor.execute() with 'search' capability."""
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
 
-        try:
-            result = await gw.search(
-                query="test query",
-                provider="duckduckgo",
-                max_results=2
-            )
-            assert result.provider == "duckduckgo"
-        finally:
-            await gw.stop()
+        gw = Gateway(config_path=str(config_file), port=19010)
 
-    @pytest.mark.asyncio
-    async def test_get_status(self):
-        """Test getting gateway status."""
-        gw = Gateway(port=18104)
-        await gw.start()
-        await asyncio.sleep(0.5)
+        expected_response = SearchResponse(
+            query="test", provider="mock", results=[], total=0, latency_ms=10.0,
+        )
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.execute = AsyncMock(return_value=expected_response)
+        gw.history = MagicMock()
+        gw.history.record = AsyncMock()
 
-        try:
-            status = await gw.get_status()
+        result = await gw.search("test", max_results=5)
 
-            assert status["running"] is True
-            assert status["port"] == 18104
-            assert "providers" in status
-            assert status["providers"]["total"] >= 1
-        finally:
-            await gw.stop()
+        assert result.provider == "mock"
+        gw.executor.execute.assert_called_once()
+        call_args = gw.executor.execute.call_args
+        assert call_args[0][0] == "search"  # capability
+        assert call_args[1].get("provider") is None
 
     @pytest.mark.asyncio
-    async def test_list_providers(self):
-        """Test listing providers."""
-        gw = Gateway(port=18105)
-        await gw.start()
-        await asyncio.sleep(0.5)
+    async def test_search_with_provider_override(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
 
-        try:
-            providers = await gw.list_providers()
+        gw = Gateway(config_path=str(config_file), port=19011)
 
-            assert len(providers) >= 1
-            provider_names = [p.name for p in providers]
-            assert "duckduckgo" in provider_names
-        finally:
-            await gw.stop()
+        expected_response = SearchResponse(
+            query="test", provider="tavily-main", results=[], total=0, latency_ms=10.0,
+        )
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.execute = AsyncMock(return_value=expected_response)
+        gw.history = MagicMock()
+        gw.history.record = AsyncMock()
 
-    @pytest.mark.asyncio
-    async def test_health_check(self):
-        """Test health check."""
-        gw = Gateway(port=18106)
-        await gw.start()
-        await asyncio.sleep(0.5)
+        result = await gw.search("test", provider="tavily-main")
 
-        try:
-            result = await gw.health_check()
-
-            assert "healthy" in result
-            assert "unhealthy" in result
-            assert "duckduckgo" in result["healthy"]
-        finally:
-            await gw.stop()
+        call_args = gw.executor.execute.call_args
+        assert call_args[1].get("provider") == "tavily-main"
 
     @pytest.mark.asyncio
-    async def test_search_with_time_range(self):
-        """Test search with time range."""
-        gw = Gateway(port=18107)
-        await gw.start()
-        await asyncio.sleep(0.5)
+    async def test_search_records_history(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
 
-        try:
-            result = await gw.search(
-                query="AI news",
-                max_results=3,
-                time_range="week"
-            )
-            assert result.query == "AI news"
-        finally:
-            await gw.stop()
+        gw = Gateway(config_path=str(config_file), port=19012)
+
+        response = SearchResponse(
+            query="test", provider="mock", results=[], total=0, latency_ms=10.0,
+        )
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.execute = AsyncMock(return_value=response)
+        gw.history = MagicMock()
+        gw.history.record = AsyncMock()
+
+        await gw.search("test")
+        gw.history.record.assert_called_once()
+
+
+class TestGatewayExtract:
+
+    @pytest.mark.asyncio
+    async def test_extract_delegates_to_executor(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
+
+        gw = Gateway(config_path=str(config_file), port=19020)
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.execute = AsyncMock(return_value="extract_result")
+
+        result = await gw.extract(["https://example.com"])
+
+        gw.executor.execute.assert_called_once()
+        call_args = gw.executor.execute.call_args
+        assert call_args[0][0] == "extract"
+
+
+class TestGatewayResearch:
+
+    @pytest.mark.asyncio
+    async def test_research_delegates_to_executor(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
+
+        gw = Gateway(config_path=str(config_file), port=19030)
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.execute = AsyncMock(return_value="research_result")
+
+        result = await gw.research("AI trends")
+
+        gw.executor.execute.assert_called_once()
+        call_args = gw.executor.execute.call_args
+        assert call_args[0][0] == "research"
+
+
+class TestGatewayStatus:
+
+    @pytest.mark.asyncio
+    async def test_get_status(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0", "executor": {"strategy": "failover"}}')
+
+        gw = Gateway(config_path=str(config_file), port=19040)
+        gw._running = True
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.get_metrics.return_value = {}
+
+        status = await gw.get_status()
+
+        assert status["running"] is True
+        assert status["port"] == 19040
+        assert status["strategy"] == "failover"
+        assert "providers" in status
+        assert "metrics" in status
+
+    @pytest.mark.asyncio
+    async def test_health_check_delegates_to_executor(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
+
+        gw = Gateway(config_path=str(config_file), port=19041)
+        gw.executor = MagicMock(spec=Executor)
+        gw.executor.run_health_checks = AsyncMock(return_value={
+            "healthy": ["duckduckgo"],
+            "unhealthy": [],
+        })
+
+        result = await gw.health_check()
+
+        assert "duckduckgo" in result["healthy"]
+        gw.executor.run_health_checks.assert_called_once()
+
+
+class TestGatewayConfig:
+
+    @pytest.mark.asyncio
+    async def test_reload_config(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"version": "3.0"}')
+
+        gw = Gateway(config_path=str(config_file), port=19050)
+
+        # Mock provider lifecycle
+        gw.providers = MagicMock(spec=ProviderRegistry)
+        gw.providers.shutdown = AsyncMock()
+        gw.providers.all.return_value = {}
+
+        with patch.object(ProviderRegistry, "initialize", new_callable=AsyncMock):
+            await gw.reload_config()
+
+        # After reload, executor should be a fresh Executor instance
+        assert isinstance(gw.executor, Executor)

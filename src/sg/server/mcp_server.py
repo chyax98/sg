@@ -1,7 +1,6 @@
-"""MCP Server - Expose gateway as MCP server."""
+"""MCP Server — expose gateway as MCP tools for LLMs."""
 
 import logging
-from typing import Any
 
 from fastmcp import FastMCP
 
@@ -9,14 +8,14 @@ logger = logging.getLogger(__name__)
 
 
 class MCPServer:
-    """MCP Server wrapper for Search Gateway."""
+    """MCP Server for Search Gateway.
+
+    Run with `sg mcp` to start in stdio mode for Claude Desktop integration.
+    """
 
     def __init__(self, gateway):
         self.gateway = gateway
-        self.mcp = FastMCP(
-            name="search-gateway",
-            version="1.0.0",
-        )
+        self.mcp = FastMCP(name="search-gateway", version="3.0.0")
         self._setup_tools()
 
     def _setup_tools(self):
@@ -25,32 +24,40 @@ class MCPServer:
             query: str,
             provider: str | None = None,
             max_results: int = 10,
+            include_domains: list[str] | None = None,
+            exclude_domains: list[str] | None = None,
+            time_range: str | None = None,
+            search_depth: str = "basic",
         ) -> str:
-            """Search the web.
+            """Search the web using multiple search engines with automatic failover.
 
             Args:
                 query: Search query
-                provider: Optional provider (tavily, brave, exa, duckduckgo)
+                provider: Optional provider name (tavily, brave, exa, etc.)
                 max_results: Maximum results (default 10)
-
-            Returns:
-                Search results as formatted text
+                include_domains: Restrict results to these domains when supported
+                exclude_domains: Exclude these domains when supported
+                time_range: day, week, month, year when supported
+                search_depth: basic or advanced when supported
             """
             result = await self.gateway.search(
                 query=query,
                 provider=provider,
                 max_results=max_results,
+                include_domains=include_domains or [],
+                exclude_domains=exclude_domains or [],
+                time_range=time_range,
+                search_depth=search_depth,
             )
 
-            # Format results
-            lines = [f"Search: {result.query} (via {result.provider})"]
-            lines.append(f"Found {result.total} results in {result.latency_ms:.0f}ms\n")
+            lines = [f"Search: {result.query} (via {result.provider}, {result.latency_ms:.0f}ms)"]
+            lines.append(f"{result.total} results\n")
 
             for i, r in enumerate(result.results, 1):
                 lines.append(f"[{i}] {r.title}")
                 lines.append(f"    {r.url}")
                 if r.content:
-                    lines.append(f"    {r.content[:200]}...")
+                    lines.append(f"    {r.content[:300]}")
                 lines.append("")
 
             return "\n".join(lines)
@@ -60,14 +67,11 @@ class MCPServer:
             urls: list[str],
             format: str = "markdown",
         ) -> str:
-            """Extract content from URLs.
+            """Extract content from web pages as clean markdown.
 
             Args:
-                urls: List of URLs to extract
-                format: Output format (markdown, text)
-
-            Returns:
-                Extracted content
+                urls: URLs to extract content from
+                format: Output format (markdown or text)
             """
             result = await self.gateway.extract(urls=urls, format=format)
 
@@ -79,7 +83,7 @@ class MCPServer:
                 if r.error:
                     lines.append(f"Error: {r.error}")
                 else:
-                    lines.append(r.content[:2000])
+                    lines.append(r.content[:5000])
                 lines.append("")
 
             return "\n".join(lines)
@@ -89,47 +93,34 @@ class MCPServer:
             topic: str,
             depth: str = "auto",
         ) -> str:
-            """Deep research on a topic.
+            """Deep research on a topic with multiple sources.
 
             Args:
-                topic: Research topic/question
+                topic: Research topic or question
                 depth: Research depth (mini, pro, auto)
-
-            Returns:
-                Research findings
             """
             result = await self.gateway.research(topic=topic, depth=depth)
             return result.content
 
         @self.mcp.tool()
         async def list_providers() -> str:
-            """List available search providers."""
+            """List available search providers and their status."""
             providers = await self.gateway.list_providers()
 
-            lines = ["Available Search Providers:"]
+            lines = ["Search Gateway Providers:"]
             for p in providers:
-                status = "✓" if p.healthy else "✗"
+                status = "OK" if p.healthy else "DOWN"
                 fallback = " (fallback)" if p.is_fallback else ""
-                lines.append(f"  {status} {p.name}{fallback}")
-                lines.append(f"    Capabilities: {', '.join(p.capabilities)}")
-                lines.append(f"    Priority: {p.priority}")
+                lines.append(f"  [{status}] {p.name} ({p.type}){fallback}")
+                lines.append(f"      Capabilities: {', '.join(p.capabilities)}")
+                lines.append(f"      Priority: {p.priority}")
 
             return "\n".join(lines)
 
-    async def start(self):
-        """Start MCP server (stdio mode)."""
-        # MCP server runs in stdio mode when used as MCP tool
-        # HTTP transport is handled separately
-        logger.info("MCP server initialized")
-
-    async def stop(self):
-        """Stop MCP server."""
-        logger.info("MCP server stopped")
-
     async def run_stdio(self):
-        """Run MCP server in stdio mode."""
+        """Run MCP server in stdio mode (for Claude Desktop)."""
         await self.mcp.run_stdio_async()
 
-    async def run_http(self, port: int = 8101):
-        """Run MCP server in HTTP mode."""
-        await self.mcp.run_http_async(host="0.0.0.0", port=port)
+    async def run_http(self, host: str = "0.0.0.0", port: int = 8101):
+        """Run MCP server in HTTP/SSE mode."""
+        await self.mcp.run_sse_async(host=host, port=port)

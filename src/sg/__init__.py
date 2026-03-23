@@ -1,3 +1,3 @@
-"""Search Gateway - Unified search with load balancing and routing."""
+"""Search Gateway — unified search with failover."""
 
-__version__ = "1.0.0"
+__version__ = "3.0.0"
