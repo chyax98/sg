@@ -5,6 +5,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+- **代码质量工具**：添加 mypy 类型检查和 ruff linting 配置
+
+### 变更
+- **CLI 输出优化**：简化输出格式以减少 token 使用，提升 AI 工具集成体验
+- **配置模板简化**：精简默认配置模板，降低初次使用门槛
+- **全局工具 UX 改进**：优化全局安装后的使用体验
+
+### 修复
+- 解决 ruff linting 检查发现的代码规范问题
+
 ## [3.0.0] - 2026-03-23
 
 ### 新增
