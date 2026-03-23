@@ -418,31 +418,17 @@ def init(config: str | None):
 
     # Create default config template
     template = {
-        "server": {"host": "127.0.0.1", "port": 8100},
+        "server": {
+            "port": 8100
+        },
         "providers": {
             "duckduckgo": {
                 "type": "duckduckgo",
                 "enabled": True,
                 "priority": 100,
-                "selection": "random",
-                "fallback_for": ["search"],
-                "instances": [{"id": "duckduckgo", "enabled": True}]
+                "fallback_for": ["search"]
             }
-        },
-        "executor": {
-            "strategy": "round_robin",
-            "health_check": {"failure_threshold": 3, "success_threshold": 2},
-            "circuit_breaker": {
-                "base_timeout": 3600,
-                "multiplier": 6,
-                "max_timeout": 172800,
-                "quota_timeout": 86400,
-                "auth_timeout": 604800
-            },
-            "failover": {"max_attempts": 3}
-        },
-        "history": {"dir": "~/.sg/history"},
-        "web_ui": {"enabled": True}
+        }
     }
 
     # Save config
