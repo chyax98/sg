@@ -213,7 +213,6 @@ def status(port: int):
         click.echo(f"  Running:   {data['running']}")
         click.echo(f"  Port:      {data['port']}")
         click.echo(f"  Strategy:  {data.get('strategy', 'N/A')}")
-        click.echo(f"  History:   {'on' if data.get('history_enabled') else 'off'}")
         click.echo(f"  Providers: {len(data['providers']['available'])} available")
         click.echo(f"  Available: {', '.join(data['providers']['available'])}")
 
@@ -249,7 +248,7 @@ def providers(port: int):
         click.echo(f"\nAvailable Providers\n")
         for p in data:
             status_icon = "+" if p.get("circuit_breaker", "closed") != "open" else "-"
-            fallback = " (fallback)" if p["is_fallback"] else ""
+            fallback = f" (fallback: {','.join(p['fallback_for'])})" if p.get("fallback_for") else ""
             ptype = f" [{p.get('type', '')}]" if p.get("type") else ""
             cb = f" [circuit: {p['circuit_breaker']}]" if p.get("circuit_breaker") != "closed" else ""
             click.echo(f"  {status_icon} {p['name']}{ptype}{fallback}{cb}")
