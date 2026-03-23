@@ -1,13 +1,13 @@
-# Search Gateway v3.0
+# Search Gateway
 
-统一搜索网关 — 聚合 8 种搜索引擎，Circuit Breaker 故障转移，DuckDuckGo 兜底。
+统一搜索网关 — 基于 provider group + instance pool 的高可用搜索入口。
 
 ## 特性
 
 - **8 种 Provider**: Tavily, Brave, Exa, You.com, Firecrawl, Jina, SearXNG, DuckDuckGo
-- **多实例支持**: 同一 provider 类型可配置多个实例（不同 API key）
+- **Provider Group + Instances**: 同一 provider 类型下可配置多个实例，共享通用配置
 - **Circuit Breaker**: 三态断路器（CLOSED/OPEN/HALF_OPEN），自动熔断与恢复
-- **统一 Failover**: search / extract / research 全部走同一条故障转移链路
+- **两层路由**: 先选 provider，再在 provider 内选择 instance
 - **三种能力**: 搜索 (search) / 内容提取 (extract) / 深度研究 (research)
 - **官方 SDK 集成**: Tavily、Exa、Firecrawl 使用官方 Python SDK
 - **多接口**: HTTP REST API + MCP 协议 + CLI + Python SDK
@@ -136,8 +136,10 @@ POST /research
 |------|------|------|
 | `/api/config` | GET | 原始配置 |
 | `/api/provider-types` | GET | 可用 provider 类型（从类元数据派生） |
-| `/api/config/providers/{id}` | PUT | 新增/更新 provider |
-| `/api/config/providers/{id}` | DELETE | 删除 provider |
+| `/api/config/providers/{id}` | PUT | 新增/更新 provider group |
+| `/api/config/providers/{id}` | DELETE | 删除 provider group |
+| `/api/config/providers/{id}/instances/{instance}` | PUT | 新增/更新 provider instance |
+| `/api/config/providers/{id}/instances/{instance}` | DELETE | 删除 provider instance |
 | `/api/config/settings` | PUT | 更新全局设置 |
 | `/api/config/reload` | POST | 重载配置 |
 
@@ -171,24 +173,34 @@ async with AsyncSearchClient() as client:
 
 ## 配置文件
 
-`config.json` (v3.0):
+`config.json`:
 
 ```json
 {
-  "version": "3.0",
   "server": { "host": "127.0.0.1", "port": 8100 },
   "providers": {
     "tavily": {
       "type": "tavily",
       "enabled": true,
-      "api_key": "tvly-your-api-key-here",      "priority": 2,
-      "timeout": 30000
+      "priority": 2,
+      "selection": "random",
+      "defaults": { "timeout": 30000 },
+      "instances": [
+        {
+          "id": "tavily-1",
+          "enabled": true,
+          "api_key": "tvly-your-api-key-here"
+        }
+      ]
     },
     "duckduckgo": {
       "type": "duckduckgo",
       "enabled": true,
       "priority": 100,
-      "is_fallback": true
+      "selection": "random",
+      "is_fallback": true,
+      "defaults": { "timeout": 30000 },
+      "instances": [{ "id": "duckduckgo" }]
     }
   },
   "executor": {
@@ -208,15 +220,18 @@ async with AsyncSearchClient() as client:
 ```
 
 **说明**：
-- `priority`: 数值越小优先级越高
-- `is_fallback`: 兜底 provider，所有其他失败后使用
+- `providers.<name>`: provider group，共享类型和通用配置
+- `instances`: 该 provider 下的多个具体实例
+- `selection`: provider 内实例选择策略，默认 `random`
+- `priority`: provider group 的全局优先级，数值越小越优先
+- `instances[].priority`: 仅用于 provider 内 `priority` 选择策略
+- `is_fallback`: 兜底 provider group，所有其他 provider 都失败后使用
 - `executor.strategy`: 默认 `round_robin`，在健康 provider 间轮询分摊请求
 - `circuit_breaker.base_timeout`: 第一次熔断多久后允许探测
 - `circuit_breaker.multiplier`: 连续熔断时的退避倍数
 - `circuit_breaker.quota_timeout`: 配额耗尽时禁用多久
 - `circuit_breaker.auth_timeout`: 认证失败时禁用多久
 - `failover.max_attempts`: 一次请求最多尝试多少个 provider
-- 旧版 v1/v2 配置会自动迁移到 v3
 
 ## Provider 对比
 

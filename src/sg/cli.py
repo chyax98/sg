@@ -10,7 +10,6 @@ import click
 
 
 @click.group()
-@click.version_option(version="3.0.0")
 def cli():
     """Search Gateway — unified search with failover."""
     pass

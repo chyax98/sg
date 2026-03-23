@@ -15,7 +15,7 @@ class MCPServer:
 
     def __init__(self, gateway):
         self.gateway = gateway
-        self.mcp = FastMCP(name="search-gateway", version="3.0.0")
+        self.mcp = FastMCP(name="search-gateway")
         self._setup_tools()
 
     def _setup_tools(self):
