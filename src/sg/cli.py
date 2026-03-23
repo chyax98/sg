@@ -84,7 +84,6 @@ def stop(port: int):
 @click.option("--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search")
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
-@click.option("--format", "-f", default="text", type=click.Choice(["text", "json", "markdown"]))
 @click.option("--port", default=8100, help="Gateway port")
 def search(
     queries: tuple[str, ...],
@@ -94,10 +93,9 @@ def search(
     exclude_domains: tuple[str, ...],
     time_range: str | None,
     search_depth: str,
-    format: str,
     port: int,
 ):
-    """Execute one or more search queries (parallel if multiple)."""
+    """Execute one or more search queries. Prints result file path(s)."""
     import httpx
 
     payload = {
@@ -117,7 +115,8 @@ def search(
                 timeout=30.0,
             )
             resp.raise_for_status()
-            results = [resp.json()]
+            data = resp.json()
+            click.echo(data["result_file"])
         else:
             resp = httpx.post(
                 f"http://127.0.0.1:{port}/search/batch",
@@ -125,21 +124,8 @@ def search(
                 timeout=60.0,
             )
             resp.raise_for_status()
-            results = resp.json()
-
-        if format == "json":
-            click.echo(json.dumps(results if len(queries) > 1 else results[0], indent=2, ensure_ascii=False))
-        else:
-            for data in results:
-                click.echo(f"\nSearch: {data['query']}")
-                click.echo(f"  Provider: {data['provider']} | {data['total']} results | {data['latency_ms']:.0f}ms\n")
-                for i, r in enumerate(data["results"], 1):
-                    click.echo(f"  [{i}] {r['title']}")
-                    click.echo(f"      {r['url']}")
-                    if r.get("content"):
-                        content = r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"]
-                        click.echo(f"      {content}")
-                    click.echo()
+            for data in resp.json():
+                click.echo(data["result_file"])
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
