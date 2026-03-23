@@ -110,12 +110,6 @@ class ServerConfig(StrictConfigModel):
     port: int = 8100
 
 
-class MCPConfig(StrictConfigModel):
-    """MCP server configuration."""
-
-    enabled: bool = False
-
-
 class HistoryConfig(StrictConfigModel):
     """Search history configuration."""
 
@@ -135,7 +129,6 @@ class GatewayConfig(StrictConfigModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     executor: ExecutorConfig = Field(default_factory=ExecutorConfig)
-    mcp: MCPConfig = Field(default_factory=MCPConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
 
