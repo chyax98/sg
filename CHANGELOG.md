@@ -12,6 +12,10 @@
 - **Daemon 模式**：`sg start -d` 后台启动网关，自动写日志到 `~/.sg/logs/gateway.log`，启动后验证健康状态
 - **CLI `-h` 支持**：所有命令支持 `-h` 作为 `--help` 的简写
 
+### 变更
+
+- **破坏性变更**：移除 MCP SSE 模式，仅保留 stdio 模式。原因：FastMCP 3.1.1 的 SSE 实现存在 bug，客户端在初始化完成前发送请求导致 `Received request before initialization was complete` 错误。stdio 模式更稳定可靠
+
 ## [1.0.0] - 2026-03-24
 
 首个正式版本发布！🎉
