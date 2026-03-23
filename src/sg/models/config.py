@@ -8,19 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 def resolve_config_path(path: str | None = None) -> Path:
-    """Resolve config file path with priority: --config > ~/.sg/config.json > ./config.json"""
+    """Resolve config file path: --config parameter > ~/.sg/config.json (default)"""
     if path:
         return Path(path).expanduser()
 
-    global_config = Path.home() / ".sg" / "config.json"
-    if global_config.exists():
-        return global_config
-
-    local_config = Path("config.json")
-    if local_config.exists():
-        return local_config
-
-    return global_config
+    # Always use global config, never fall back to project directory
+    return Path.home() / ".sg" / "config.json"
 
 
 class StrictConfigModel(BaseModel):
