@@ -11,7 +11,10 @@ Fatal errors (auth failure, quota exhaustion) bypass the threshold
 and open the breaker immediately with a long timeout.
 """
 
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 
 
 class FailureType:
@@ -60,9 +63,11 @@ class CircuitBreaker:
             now = time.monotonic()
             # Check if disabled_until has passed
             if self._disabled_until and now >= self._disabled_until:
+                logger.info("Circuit breaker entering HALF_OPEN state for probing")
                 self._state = self.HALF_OPEN
                 self._success_count = 0
             elif not self._disabled_until and now - self._last_failure_time >= self._current_timeout:
+                logger.info("Circuit breaker entering HALF_OPEN state for probing")
                 self._state = self.HALF_OPEN
                 self._success_count = 0
         return self._state
@@ -85,11 +90,12 @@ class CircuitBreaker:
     def allow_request(self) -> bool:
         return self.state != self.OPEN
 
-    def record_success(self):
+    def record_success(self) -> None:
         """Record success. In HALF_OPEN, enough successes close the breaker."""
         if self._state == self.HALF_OPEN:
             self._success_count += 1
             if self._success_count >= self.success_threshold:
+                logger.info(f"Circuit breaker CLOSED: recovered after {self._trip_count} trips")
                 self._state = self.CLOSED
                 self._failure_count = 0
                 self._success_count = 0
@@ -99,7 +105,7 @@ class CircuitBreaker:
             # Any success in CLOSED resets consecutive failure count
             self._failure_count = 0
 
-    def record_failure(self, failure_type: str = FailureType.TRANSIENT):
+    def record_failure(self, failure_type: str = FailureType.TRANSIENT) -> None:
         """Record failure. Opens breaker based on type and threshold."""
         self._failure_count += 1
         self._last_failure_time = time.monotonic()
@@ -107,31 +113,38 @@ class CircuitBreaker:
 
         if failure_type == FailureType.AUTH:
             # Auth failure → immediately open with long timeout
-            self._open_breaker(self.auth_timeout)
+            self._open_breaker(self.auth_timeout, failure_type)
         elif failure_type == FailureType.QUOTA:
             # Quota exhausted → immediately open with quota timeout
-            self._open_breaker(self.quota_timeout)
+            self._open_breaker(self.quota_timeout, failure_type)
         elif self._state == self.HALF_OPEN:
             # Any failure in HALF_OPEN → back to OPEN with escalated timeout
-            self._open_breaker(self._next_timeout())
+            self._open_breaker(self._next_timeout(), failure_type)
         elif self._failure_count >= self.failure_threshold:
             # Consecutive transient failures exceeded threshold
-            self._open_breaker(self._next_timeout())
+            self._open_breaker(self._next_timeout(), failure_type)
 
-    def _open_breaker(self, timeout: float):
+    def _open_breaker(self, timeout: float, failure_type: str) -> None:
         """Transition to OPEN with given timeout."""
         self._state = self.OPEN
         self._trip_count += 1
         self._current_timeout = timeout
         self._disabled_until = time.monotonic() + timeout
 
+        timeout_hours = timeout / 3600
+        logger.warning(
+            f"Circuit breaker OPENED: failure_type={failure_type}, "
+            f"timeout={timeout_hours:.1f}h, trip_count={self._trip_count}"
+        )
+
     def _next_timeout(self) -> float:
         """Calculate next timeout with exponential backoff."""
         timeout = self.base_timeout * (self.multiplier ** (self._trip_count))
         return min(timeout, self.max_timeout)
 
-    def reset(self):
+    def reset(self) -> None:
         """Manual reset to closed state."""
+        logger.info("Circuit breaker manually reset to CLOSED state")
         self._state = self.CLOSED
         self._failure_count = 0
         self._success_count = 0

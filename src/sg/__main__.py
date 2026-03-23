@@ -3,7 +3,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-from sg.cli import cli
+from sg.cli import cli  # noqa: E402
 
 if __name__ == "__main__":
     cli()

@@ -43,8 +43,14 @@ class SearchHistory:
 
         filepath = month_dir / f"{entry_id}.json"
         content = json.dumps(entry, ensure_ascii=False, indent=2)
-        await asyncio.to_thread(filepath.write_text, content)
-        return str(filepath)
+
+        try:
+            await asyncio.to_thread(filepath.write_text, content)
+            logger.debug(f"History saved: query='{request.query}', provider={response.provider}, file={filepath}")
+            return str(filepath)
+        except Exception as e:
+            logger.error(f"Failed to save history: {e}")
+            raise
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[HistoryEntry]:
         """List recent entries (without full results)."""
@@ -75,28 +81,45 @@ class SearchHistory:
         return entries
 
     async def get(self, entry_id: str) -> HistoryEntry | None:
-        """Get full entry by ID."""
-        if not self.dir.exists():
+        """Get full entry by ID.
+        
+        entry_id can be either:
+        - A full file path (as returned by record)
+        - Just the entry ID (filename without extension)
+        """
+        if not self.dir.exists() or not self.dir.is_dir():
             return None
 
-        files = await asyncio.to_thread(
-            lambda: list(self.dir.rglob(f"{entry_id}.json"))
-        )
-        for f in files:
-            try:
-                text = await asyncio.to_thread(f.read_text)
-                data = json.loads(text)
-                return HistoryEntry.model_validate(data)
-            except (json.JSONDecodeError, KeyError):
-                return None
-        return None
+        # If entry_id looks like a path, extract just the filename stem
+        entry_path = Path(entry_id)
+        pure_id = entry_path.stem if entry_path.suffix == '.json' else entry_id
+
+        # Search for the entry file in all month subdirectories
+        def _find_entry():
+            for month_dir in self.dir.iterdir():
+                if month_dir.is_dir():
+                    entry_file = month_dir / f"{pure_id}.json"
+                    if entry_file.exists():
+                        return entry_file
+            return None
+
+        filepath = await asyncio.to_thread(_find_entry)
+        if not filepath:
+            return None
+
+        try:
+            text = await asyncio.to_thread(filepath.read_text)
+            data = json.loads(text)
+            return HistoryEntry.model_validate(data)
+        except (json.JSONDecodeError, KeyError):
+            return None
 
     async def clear(self) -> int:
         """Clear all history. Returns count deleted."""
         if not self.dir.exists():
             return 0
 
-        def _do_clear():
+        def _do_clear() -> int:
             count = 0
             for f in self.dir.rglob("*.json"):
                 f.unlink()
@@ -106,4 +129,6 @@ class SearchHistory:
                     d.rmdir()
             return count
 
-        return await asyncio.to_thread(_do_clear)
+        count = await asyncio.to_thread(_do_clear)
+        logger.info(f"History cleared: {count} entries deleted")
+        return count

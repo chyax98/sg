@@ -175,21 +175,29 @@ class ProviderRegistry:
             if excluded_instances and instance_id in excluded_instances:
                 continue
             if allow_request and not allow_request(instance_id):
+                logger.debug(f"Instance {instance_id} excluded by circuit breaker")
                 continue
             available.append(provider)
 
         if not available:
+            logger.warning(f"No available instances in group '{group_name}' for capability '{capability}'")
             return None
 
+        logger.debug(f"Selecting instance from group '{group_name}', strategy={cfg.selection}, available={len(available)}")
+
         if cfg.selection == "priority":
-            return min(available, key=lambda provider: provider.priority)
-        if cfg.selection == "round_robin":
+            selected = min(available, key=lambda provider: provider.priority)
+        elif cfg.selection == "round_robin":
             available = sorted(available, key=lambda provider: provider.priority)
             with self._rr_lock:
                 idx = self._rr_index.get(group_name, 0) % len(available)
                 self._rr_index[group_name] = self._rr_index.get(group_name, 0) + 1
-            return available[idx]
-        return random.choice(available)
+            selected = available[idx]
+        else:
+            selected = random.choice(available)
+
+        logger.debug(f"Selected instance: {selected.name} (priority={selected.priority})")
+        return selected
 
     def get_search_provider(self, name: str) -> SearchProvider | None:
         p = self._providers.get(name)

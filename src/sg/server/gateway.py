@@ -95,11 +95,14 @@ class Gateway:
         self, queries: list[str], provider: str | None = None, max_results: int = 10, **kwargs,
     ) -> list[SearchResponse]:
         """Execute multiple searches in parallel."""
+        logger.info(f"Executing batch search: {len(queries)} queries")
         tasks = [
             self.search(q, provider=provider, max_results=max_results, **kwargs)
             for q in queries
         ]
-        return await asyncio.gather(*tasks, return_exceptions=False)
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+        logger.info(f"Batch search completed: {len(results)}/{len(queries)} succeeded")
+        return results
 
     async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> Any:
         """Extract content with failover."""

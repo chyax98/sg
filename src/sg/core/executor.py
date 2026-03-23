@@ -112,6 +112,7 @@ class Executor:
             metrics.requests += 1
             metrics.successes += 1
             metrics.total_latency_ms += latency
+            logger.info(f"Provider {name} succeeded in {latency:.1f}ms")
             return True, result, None
         except ProviderCapabilityError as e:
             logger.info(f"Provider {name} skipped: {e}")
@@ -166,6 +167,8 @@ class Executor:
         provider: str | None = None,
     ) -> Any:
         """Execute operation with failover across providers."""
+        logger.info(f"Executing {capability} request, provider={provider or 'auto'}")
+
         groups = self._candidate_groups(capability, provider)
         if not groups:
             raise RuntimeError(f"No providers available for '{capability}'")
@@ -174,8 +177,10 @@ class Executor:
         last_error: Exception | None = None
 
         tried_groups = groups[:max_attempts]
+        logger.debug(f"Candidate groups: {tried_groups}")
 
         for group_name in tried_groups:
+            logger.debug(f"Trying group: {group_name}")
             attempted_instances: set[str] = set()
 
             while True:
@@ -203,6 +208,7 @@ class Executor:
                     operation,
                 )
                 if ok:
+                    logger.info(f"Request completed: provider={provider_instance.name}")
                     return result
                 last_error = error
 
@@ -211,6 +217,7 @@ class Executor:
 
         fallback_group = self.registry.get_fallback_group(capability)
         if fallback_group and fallback_group not in tried_groups:
+            logger.debug(f"All normal providers failed, trying fallback group: {fallback_group}")
             attempted_instances = set()
             while True:
                 provider_instance = self.registry.select_instance(
