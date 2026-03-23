@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-24
+
 ### 新增
 
 - **Daemon 模式**：`sg start -d` 后台启动网关，自动写日志到 `~/.sg/logs/gateway.log`，启动后验证健康状态
