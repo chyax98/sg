@@ -356,7 +356,11 @@ class HTTPServer:
         logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 
         config = uvicorn.Config(
-            self.app, host=self.host, port=self.port, log_level="error",
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="error",
+            ws="wsproto",  # Use wsproto instead of websockets to avoid deprecation warnings
         )
         self._server = uvicorn.Server(config)
         asyncio.create_task(self._server.serve())
