@@ -29,8 +29,12 @@
 # 全局安装（推荐）
 uv tool install .
 
-# 或开发模式
-pip install -e .
+# 开发模式（代码修改自动生效）
+uv tool install --editable .
+
+# 或使用 Makefile
+make install    # 全局安装
+make dev        # 开发模式
 ```
 
 ### 配置
@@ -115,6 +119,36 @@ sg health       # 健康检查
 sg history      # 搜索历史
 sg web          # 打开 Web UI
 sg stop         # 停止网关
+```
+
+### 开发工具
+
+项目提供了便捷的开发工具来快速更新和安装：
+
+**使用 Makefile（推荐）：**
+```bash
+make install    # 安装到全局
+make dev        # 开发模式安装（代码修改自动生效）
+make push       # 推送并重新安装
+make update     # 提交、推送、重新安装
+make test       # 运行测试
+make clean      # 清理缓存
+make help       # 显示帮助
+```
+
+**使用脚本：**
+```bash
+./scripts/dev-install.sh    # 交互式提交、推送、安装
+./scripts/quick-update.sh   # 快速推送并安装
+```
+
+**手动命令：**
+```bash
+# 快速更新流程
+git add -A && git commit -m "feat: xxx" && git push && uv tool install --force .
+
+# 开发模式（推荐）
+uv tool install --editable .  # 代码修改后自动生效，无需重新安装
 ```
 
 ## HTTP API
