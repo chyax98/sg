@@ -1,106 +1,115 @@
-"""Firecrawl provider - Search + Extract combined."""
+"""Firecrawl provider — uses official firecrawl-py SDK."""
 
-import logging
 import time
 
-import httpx
-
-from ..models.search import ExtractRequest, ExtractResult, ExtractResponse, SearchRequest, SearchResponse, SearchResult
-from .base import ExtractProvider, SearchProvider
-
-logger = logging.getLogger(__name__)
+from ..models.search import (
+    ExtractRequest, ExtractResponse, ExtractResult,
+    SearchRequest, SearchResponse, SearchResult,
+)
+from .base import ExtractProvider, ProviderInfo, SearchProvider
 
 
 class FirecrawlProvider(SearchProvider, ExtractProvider):
-    """Firecrawl - Combined search and content extraction.
+    """Firecrawl: search + content extraction with clean markdown.
 
-    Returns clean markdown content, not just snippets.
+    Free 500/month.
     """
 
-    name = "firecrawl"
-    capabilities = ["search", "extract"]
-    BASE_URL = "https://api.firecrawl.dev/v1"
+    info = ProviderInfo(
+        type="firecrawl",
+        display_name="Firecrawl",
+        capabilities=("search", "extract"),
+        search_features=("include_domains", "exclude_domains", "time_range"),
+    )
 
-    def __init__(self, api_key: str | None = None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.api_key = api_key
-        self.priority = kwargs.get("priority", 15)
+        self._client = None
 
     async def initialize(self) -> bool:
         if not self.api_key:
-            logger.warning("Firecrawl: No API key provided")
             return False
-        self._client = httpx.AsyncClient(
-            base_url=self.BASE_URL,
-            timeout=self.timeout / 1000,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-        )
+        from firecrawl import AsyncFirecrawl
+        self._client = AsyncFirecrawl(api_key=self.api_key)
         return True
 
     async def shutdown(self) -> None:
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        self._client = None
 
     async def health_check(self) -> tuple[bool, str | None]:
-        if not self.api_key:
-            return False, "No API key"
-        # Firecrawl doesn't have a dedicated health endpoint, just check key format
-        return True, None
+        if not self._client:
+            return (False, "Not initialized")
+        return (True, None)
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """Search and return results with full content."""
+        if not self._client:
+            raise RuntimeError("Not initialized")
+        self.validate_search_request(request)
+
         start = time.perf_counter()
 
-        resp = await self._client.post(
-            "/search",
-            json={
-                "query": request.query,
-                "limit": request.max_results,
-            },
+        query = self.apply_domain_operators(
+            request.query,
+            request.include_domains,
+            request.exclude_domains,
         )
-        resp.raise_for_status()
-        data = resp.json()
+        kwargs = {
+            "query": query,
+            "limit": request.max_results,
+        }
+        if request.time_range:
+            tbs_map = {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"}
+            if request.time_range in tbs_map:
+                kwargs["tbs"] = tbs_map[request.time_range]
 
-        results = []
-        for item in data.get("data", data.get("results", [])):
-            results.append(SearchResult(
-                title=item.get("title", ""),
-                url=item.get("url", item.get("link", "")),
-                content=item.get("markdown", item.get("content", item.get("description", ""))),
-                snippet=item.get("description", ""),
-                score=item.get("score", 0),
-                source=self.name,
-            ))
-
+        data = await self._client.search(
+            **kwargs,
+        )
         latency = (time.perf_counter() - start) * 1000
+
+        items = data if isinstance(data, list) else data.get("data", data.get("results", []))
+        results = []
+        for item in items:
+            if isinstance(item, dict):
+                results.append(SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", item.get("link", "")),
+                    content=item.get("markdown", item.get("content", item.get("description", ""))),
+                    snippet=item.get("description", ""),
+                    score=item.get("score", 0),
+                    source=self.name,
+                ))
+            else:
+                results.append(SearchResult(
+                    title=getattr(item, "title", "") or "",
+                    url=getattr(item, "url", "") or "",
+                    content=getattr(item, "markdown", "") or getattr(item, "content", "") or "",
+                    source=self.name,
+                ))
+
         return SearchResponse(
-            query=request.query,
-            provider=self.name,
+            query=request.query, provider=self.name,
             results=results[:request.max_results],
-            total=len(results),
-            latency_ms=latency,
+            total=len(results), latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:
-        """Extract content from URLs using scrape endpoint."""
+        if not self._client:
+            raise RuntimeError("Not initialized")
+
         start = time.perf_counter()
         results = []
 
         for url in request.urls:
             try:
-                resp = await self._client.post(
-                    "/scrape",
-                    json={"url": url},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-                results.append(ExtractResult(
-                    url=url,
-                    content=data.get("data", {}).get("markdown", data.get("markdown", "")),
-                    title=data.get("data", {}).get("metadata", {}).get("title", ""),
-                ))
+                data = await self._client.scrape_url(url, formats=["markdown"])
+                if isinstance(data, dict):
+                    content = data.get("markdown", data.get("data", {}).get("markdown", ""))
+                    title = data.get("metadata", {}).get("title", "")
+                else:
+                    content = getattr(data, "markdown", "") or ""
+                    title = ""
+                results.append(ExtractResult(url=url, content=content, title=title))
             except Exception as e:
                 results.append(ExtractResult(url=url, content="", error=str(e)))
 
