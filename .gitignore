@@ -58,3 +58,4 @@ Thumbs.db
 
 # Logs
 *.log
+.python-version
