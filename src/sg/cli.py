@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from ._utils import ensure_gateway_running
+
 
 @click.group()
 def cli():
@@ -100,6 +102,7 @@ def _print_result_file(data: dict) -> None:
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
 @click.option("--port", default=8100, help="Gateway port")
+@click.option("--config", "-c", default="config.json", help="Config file path")
 def search(
     queries: tuple[str, ...],
     provider: str | None,
@@ -109,9 +112,13 @@ def search(
     time_range: str | None,
     search_depth: str,
     port: int,
+    config: str,
 ):
     """Execute one or more search queries. Prints result file path(s)."""
     import httpx
+
+    # Ensure gateway is running, start if needed
+    ensure_gateway_running(port, config)
 
     payload = {
         "provider": provider,
@@ -155,9 +162,13 @@ def search(
 @click.option("--provider", "-p", default=None, help="Extract provider")
 @click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "text"]))
 @click.option("--port", default=8100, help="Gateway port")
-def extract(urls: tuple[str], provider: str | None, format: str, port: int):
+@click.option("--config", "-c", default="config.json", help="Config file path")
+def extract(urls: tuple[str], provider: str | None, format: str, port: int, config: str):
     """Extract content from URLs."""
     import httpx
+
+    # Ensure gateway is running, start if needed
+    ensure_gateway_running(port, config)
     try:
         resp = httpx.post(
             f"http://127.0.0.1:{port}/extract",
@@ -190,9 +201,14 @@ def extract(urls: tuple[str], provider: str | None, format: str, port: int):
 @click.argument("topic")
 @click.option("--depth", "-d", default="auto", type=click.Choice(["mini", "pro", "auto"]))
 @click.option("--port", default=8100, help="Gateway port")
-def research(topic: str, depth: str, port: int):
+@click.option("--config", "-c", default="config.json", help="Config file path")
+def research(topic: str, depth: str, port: int, config: str):
     """Execute deep research on a topic."""
     import httpx
+
+    # Ensure gateway is running, start if needed
+    ensure_gateway_running(port, config)
+
     click.echo(f"Researching: {topic} (depth: {depth})...")
 
     try:
@@ -214,9 +230,13 @@ def research(topic: str, depth: str, port: int):
 
 @cli.command()
 @click.option("--port", default=8100, help="Gateway port")
-def status(port: int):
+@click.option("--config", "-c", default="config.json", help="Config file path")
+def status(port: int, config: str):
     """Show gateway status."""
     import httpx
+
+    # Ensure gateway is running, start if needed
+    ensure_gateway_running(port, config)
     try:
         resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=5.0)
         resp.raise_for_status()
@@ -250,9 +270,13 @@ def status(port: int):
 
 @cli.command()
 @click.option("--port", default=8100, help="Gateway port")
-def providers(port: int):
+@click.option("--config", "-c", default="config.json", help="Config file path")
+def providers(port: int, config: str):
     """List available providers."""
     import httpx
+
+    # Ensure gateway is running, start if needed
+    ensure_gateway_running(port, config)
     try:
         resp = httpx.get(f"http://127.0.0.1:{port}/providers", timeout=5.0)
         resp.raise_for_status()
