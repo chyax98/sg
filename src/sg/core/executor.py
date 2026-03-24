@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -71,7 +70,6 @@ class Executor:
         self._breakers: dict[str, CircuitBreaker] = {}
         self._metrics: dict[str, ProviderMetrics] = {}
         self._rr_index = 0
-        self._rr_lock = threading.Lock()
 
     def _breaker(self, name: str) -> CircuitBreaker:
         if name not in self._breakers:
@@ -159,6 +157,10 @@ class Executor:
         if fallback_group and fallback_group not in groups:
             groups.append(fallback_group)
         return groups
+
+    def available_group_count(self, capability: str) -> int:
+        """Return number of candidate provider groups for a capability."""
+        return len(self._candidate_groups(capability))
 
     async def execute(
         self,

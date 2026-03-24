@@ -113,7 +113,8 @@ class Gateway:
         """Execute multiple searches in parallel, spread across providers."""
         logger.info(f"Executing batch search: {len(queries)} queries")
         tasks = [
-            self.search(q, provider=provider, max_results=max_results, spread_index=i, **kwargs)
+            self.search(q, provider=provider, max_results=max_results,
+                        spread_index=i if provider is None else None, **kwargs)
             for i, q in enumerate(queries)
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -132,8 +133,11 @@ class Gateway:
         """Extract content with failover. Multiple URLs spread across providers when beneficial."""
         # Only spread when there are multiple extract providers available
         # Otherwise use batch API (single provider can batch URLs more efficiently)
-        extract_groups = self.executor._candidate_groups("extract") if provider is None else []
-        should_spread = len(urls) > 1 and provider is None and len(extract_groups) >= 2
+        should_spread = (
+            len(urls) > 1
+            and provider is None
+            and self.executor.available_group_count("extract") >= 2
+        )
 
         if should_spread:
             # Spread: each URL independently selects a provider
