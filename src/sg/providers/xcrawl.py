@@ -1,5 +1,6 @@
 """Xcrawl provider — search + web scraping with LLM-friendly output."""
 
+import asyncio
 import os
 import time
 
@@ -126,9 +127,8 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
-        results = []
 
-        for url in request.urls:
+        async def _scrape_one(url: str) -> ExtractResult:
             try:
                 payload = {
                     "url": url,
@@ -165,10 +165,12 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
                 metadata = result_data.get("metadata", {})
                 title = metadata.get("title")
 
-                results.append(ExtractResult(url=url, content=content, title=title))
+                return ExtractResult(url=url, content=content, title=title)
 
             except Exception as e:
-                results.append(ExtractResult(url=url, content="", error=str(e)))
+                return ExtractResult(url=url, content="", error=str(e))
+
+        results = await asyncio.gather(*[_scrape_one(url) for url in request.urls])
 
         latency = (time.perf_counter() - start) * 1000
-        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
+        return ExtractResponse(results=list(results), provider=self.name, latency_ms=latency)

@@ -73,9 +73,7 @@ class MCPServer:
         return self._http_client
 
     async def _call_gateway(self, endpoint: str, data: dict | None = None) -> dict[str, Any]:
-        """Make HTTP call to gateway daemon, ensuring it's running."""
-        ensure_gateway_running(self.port, self.config)
-
+        """Make HTTP call to gateway daemon."""
         if data:
             resp = await self.http_client.post(f"{self.base_url}{endpoint}", json=data)
         else:

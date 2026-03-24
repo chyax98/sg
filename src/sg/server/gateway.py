@@ -11,6 +11,7 @@ from ..models.config import GatewayConfig
 from ..models.search import (
     ExtractRequest,
     ExtractResponse,
+    ExtractResult,
     ResearchRequest,
     ResearchResponse,
     SearchRequest,
@@ -84,6 +85,7 @@ class Gateway:
         query: str,
         provider: str | None = None,
         max_results: int = 10,
+        spread_index: int | None = None,
         **kwargs,
     ) -> SearchResponse:
         """Execute search with failover."""
@@ -94,7 +96,9 @@ class Gateway:
                 raise RuntimeError(f"{p.name} does not support search")
             return await p.search(request)
 
-        response: SearchResponse = await self.executor.execute("search", op, provider=provider)
+        response: SearchResponse = await self.executor.execute(
+            "search", op, provider=provider, spread_index=spread_index,
+        )
         result_file = await self.history.record(request, response)
         response.result_file = result_file
         return response
@@ -106,10 +110,11 @@ class Gateway:
         max_results: int = 10,
         **kwargs,
     ) -> list[SearchResponse]:
-        """Execute multiple searches in parallel."""
+        """Execute multiple searches in parallel, spread across providers."""
         logger.info(f"Executing batch search: {len(queries)} queries")
         tasks = [
-            self.search(q, provider=provider, max_results=max_results, **kwargs) for q in queries
+            self.search(q, provider=provider, max_results=max_results, spread_index=i, **kwargs)
+            for i, q in enumerate(queries)
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -124,16 +129,58 @@ class Gateway:
         return results
 
     async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> ExtractResponse:
-        """Extract content with failover."""
-        request = ExtractRequest(urls=urls, **kwargs)
+        """Extract content with failover. Multiple URLs spread across providers when beneficial."""
+        # Only spread when there are multiple extract providers available
+        # Otherwise use batch API (single provider can batch URLs more efficiently)
+        extract_groups = self.executor._candidate_groups("extract") if provider is None else []
+        should_spread = len(urls) > 1 and provider is None and len(extract_groups) >= 2
 
-        async def op(p):
-            if not isinstance(p, ExtractProvider):
-                raise RuntimeError(f"{p.name} does not support extract")
-            return await p.extract(request)
+        if should_spread:
+            # Spread: each URL independently selects a provider
+            async def _extract_one(url: str, idx: int) -> ExtractResponse:
+                request = ExtractRequest(urls=[url], **kwargs)
 
-        response: ExtractResponse = await self.executor.execute("extract", op, provider=provider)
-        
+                async def op(p):
+                    if not isinstance(p, ExtractProvider):
+                        raise RuntimeError(f"{p.name} does not support extract")
+                    return await p.extract(request)
+
+                return await self.executor.execute(
+                    "extract", op, spread_index=idx,
+                )
+
+            tasks = [_extract_one(url, i) for i, url in enumerate(urls)]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Merge results
+            all_results = []
+            providers_used: set[str] = set()
+            max_latency = 0.0
+            for i, resp in enumerate(responses):
+                if isinstance(resp, Exception):
+                    logger.error(f"Extract URL '{urls[i]}' failed: {resp}")
+                    all_results.append(ExtractResult(url=urls[i], content="", error=str(resp)))
+                else:
+                    all_results.extend(resp.results)
+                    providers_used.add(resp.provider)
+                    max_latency = max(max_latency, resp.latency_ms)
+
+            response = ExtractResponse(
+                results=all_results,
+                provider=",".join(sorted(providers_used)),
+                latency_ms=max_latency,
+            )
+        else:
+            # Single URL, explicit provider, or only 1 extract provider — use batch API
+            request = ExtractRequest(urls=urls, **kwargs)
+
+            async def op(p):
+                if not isinstance(p, ExtractProvider):
+                    raise RuntimeError(f"{p.name} does not support extract")
+                return await p.extract(request)
+
+            response = await self.executor.execute("extract", op, provider=provider)
+
         # Save to history file
         combined_content = "\n\n".join(
             [f"=== {r.url} ===\n" + (f"Title: {r.title}\n" if r.title else "") + (f"Error: {r.error}\n" if r.error else "") + r.content for r in response.results]

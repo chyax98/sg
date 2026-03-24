@@ -165,13 +165,28 @@ class Executor:
         capability: str,
         operation: Callable[[BaseProvider], Any],
         provider: str | None = None,
+        spread_index: int | None = None,
     ) -> Any:
-        """Execute operation with failover across providers."""
+        """Execute operation with failover across providers.
+
+        Args:
+            spread_index: If set, rotate candidate groups to distribute load.
+                          e.g. with groups [tavily, exa, brave]:
+                            spread_index=0 → try [tavily, exa, brave]
+                            spread_index=1 → try [exa, brave, tavily]
+                            spread_index=2 → try [brave, tavily, exa]
+                          Each request still has full failover chain.
+        """
         logger.info(f"Executing {capability} request, provider={provider or 'auto'}")
 
         groups = self._candidate_groups(capability, provider)
         if not groups:
             raise RuntimeError(f"No providers available for '{capability}'")
+
+        # Spread: rotate starting point to distribute load across providers
+        if spread_index is not None and provider is None and len(groups) > 1:
+            offset = spread_index % len(groups)
+            groups = groups[offset:] + groups[:offset]
 
         max_attempts = min(len(groups), self.config.failover.max_attempts)
         last_error: Exception | None = None

@@ -1,5 +1,6 @@
 """Firecrawl provider — uses official firecrawl-py SDK."""
 
+import asyncio
 import time
 
 from ..models.search import (
@@ -112,9 +113,8 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
-        results = []
 
-        for url in request.urls:
+        async def _scrape_one(url: str) -> ExtractResult:
             try:
                 data = await self._client.scrape_url(url, formats=["markdown"])
                 if isinstance(data, dict):
@@ -123,9 +123,11 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
                 else:
                     content = getattr(data, "markdown", "") or ""
                     title = ""
-                results.append(ExtractResult(url=url, content=content, title=title))
+                return ExtractResult(url=url, content=content, title=title)
             except Exception as e:
-                results.append(ExtractResult(url=url, content="", error=str(e)))
+                return ExtractResult(url=url, content="", error=str(e))
+
+        results = await asyncio.gather(*[_scrape_one(url) for url in request.urls])
 
         latency = (time.perf_counter() - start) * 1000
-        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
+        return ExtractResponse(results=list(results), provider=self.name, latency_ms=latency)

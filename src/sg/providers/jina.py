@@ -1,5 +1,6 @@
 """Jina Reader provider — raw httpx (no SDK, URL-prefix API)."""
 
+import asyncio
 import time
 
 import httpx
@@ -108,9 +109,8 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
-        results = []
 
-        for url in request.urls:
+        async def _extract_one(url: str) -> ExtractResult:
             try:
                 resp = await self._extract_client.get(
                     f"https://r.jina.ai/{url}",
@@ -119,15 +119,15 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
                 resp.raise_for_status()
                 data = resp.json()
 
-                results.append(
-                    ExtractResult(
-                        url=url,
-                        content=data.get("data", {}).get("content", resp.text),
-                        title=data.get("data", {}).get("title"),
-                    )
+                return ExtractResult(
+                    url=url,
+                    content=data.get("data", {}).get("content", resp.text),
+                    title=data.get("data", {}).get("title"),
                 )
             except Exception as e:
-                results.append(ExtractResult(url=url, content="", error=str(e)))
+                return ExtractResult(url=url, content="", error=str(e))
+
+        results = await asyncio.gather(*[_extract_one(url) for url in request.urls])
 
         latency = (time.perf_counter() - start) * 1000
-        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
+        return ExtractResponse(results=list(results), provider=self.name, latency_ms=latency)
