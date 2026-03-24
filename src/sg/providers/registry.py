@@ -50,7 +50,6 @@ class ProviderRegistry:
         self._groups: dict[str, list[str]] = {}
         self._instance_to_group: dict[str, str] = {}
         self._rr_index: dict[str, int] = {}
-        self._rr_lock = threading.Lock()
 
         if not BUILTIN_PROVIDERS:
             _register_builtins()
@@ -195,9 +194,8 @@ class ProviderRegistry:
             selected = min(available, key=lambda provider: provider.priority)
         elif cfg.selection == InstanceSelection.ROUND_ROBIN:
             available = sorted(available, key=lambda provider: provider.priority)
-            with self._rr_lock:
-                idx = self._rr_index.get(group_name, 0) % len(available)
-                self._rr_index[group_name] = self._rr_index.get(group_name, 0) + 1
+            idx = self._rr_index.get(group_name, 0) % len(available)
+            self._rr_index[group_name] = self._rr_index.get(group_name, 0) + 1
             selected = available[idx]
         else:
             selected = random.choice(available)

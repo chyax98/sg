@@ -66,17 +66,22 @@ class MCPServer:
         self.mcp = FastMCP(name="search-gateway")
         self._setup_tools()
 
+    @property
+    def http_client(self) -> httpx.AsyncClient:
+        if not hasattr(self, "_http_client"):
+            self._http_client = httpx.AsyncClient(timeout=300.0)
+        return self._http_client
+
     async def _call_gateway(self, endpoint: str, data: dict | None = None) -> dict[str, Any]:
         """Make HTTP call to gateway daemon, ensuring it's running."""
         ensure_gateway_running(self.port, self.config)
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            if data:
-                resp = await client.post(f"{self.base_url}{endpoint}", json=data)
-            else:
-                resp = await client.get(f"{self.base_url}{endpoint}")
-            resp.raise_for_status()
-            return resp.json()
+        if data:
+            resp = await self.http_client.post(f"{self.base_url}{endpoint}", json=data)
+        else:
+            resp = await self.http_client.get(f"{self.base_url}{endpoint}")
+        resp.raise_for_status()
+        return resp.json()
 
     def _setup_tools(self):
         @self.mcp.tool()
