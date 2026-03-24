@@ -182,15 +182,10 @@ class MCPServer:
                        Supported params vary by provider - unsupported params are ignored
 
             Returns:
-                Extracted content for each URL, formatted as:
-                === <URL> ===
-                Title: <page title>
-                <content in markdown or text format>
-
-                If extraction fails for a URL, an error message is included instead.
-
-            Note: Content is returned directly (also saved to file for record keeping).
-            For very long pages, content may be truncated to first 5000 characters per URL.
+                A file path containing the extracted JSON data, and a summary of the URLs processed.
+                You MUST read the returned file path to access the full extracted contents, 
+                as they are not returned directly to save context space.
+                The file contains a single JSON line with the extracted content.
             """
             result = await self._call_gateway(
                 "/extract",
@@ -201,16 +196,19 @@ class MCPServer:
                 },
             )
 
-            # Format content for display
             lines = []
+            result_file = result.get("result_file")
+            if result_file:
+                lines.append(f"Hint: 提取的内容已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 结果！\n")
+            
             for r in result.get("results", []):
-                lines.append(f"=== {r.get('url', '')} ===")
+                lines.append(f"URL: {r.get('url', '')}")
                 if r.get("title"):
                     lines.append(f"Title: {r['title']}")
                 if r.get("error"):
-                    lines.append(f"Error: {r['error']}")
+                    lines.append(f"Status: Error - {r['error']}")
                 else:
-                    lines.append(r.get("content", "")[:5000])
+                    lines.append("Status: Success")
                 lines.append("")
             return "\n".join(lines)
 
@@ -239,13 +237,12 @@ class MCPServer:
                       - "auto": Automatically choose based on query complexity (default)
 
             Returns:
-                Research report containing:
-                - Synthesized findings from multiple sources
-                - Citations and source URLs
-                - Key insights and conclusions
+                A file path containing the research report.
+                You MUST read the returned file path to access the full report, as it is not 
+                returned directly to save context space. The file contains a single JSON line 
+                with the full report in the `content` field.
 
-            Note: Research content is returned directly (also saved to file for record keeping).
-            This operation may take longer than simple search (10-30 seconds depending on depth).
+            Note: This operation may take longer than simple search (10-30 seconds depending on depth).
             """
             result = await self._call_gateway(
                 "/research",
@@ -255,7 +252,15 @@ class MCPServer:
                 },
             )
 
-            return result.get("content", "")
+            lines = []
+            result_file = result.get("result_file")
+            if result_file:
+                lines.append(f"Hint: 深度研究报告已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 报告！\n")
+            
+            content = result.get("content", "")
+            lines.append("Preview:")
+            lines.append(content[:1000] + ("\n...(truncated)..." if len(content) > 1000 else ""))
+            return "\n".join(lines)
 
         @self.mcp.tool()
         async def list_providers() -> str:

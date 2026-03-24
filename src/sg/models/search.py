@@ -75,6 +75,7 @@ class ExtractResponse(BaseModel):
     results: list[ExtractResult]
     provider: str
     latency_ms: float
+    result_file: str | None = None
 
 
 class ResearchRequest(BaseModel):
@@ -92,6 +93,7 @@ class ResearchResponse(BaseModel):
     sources: list[str]
     provider: str
     latency_ms: float
+    result_file: str | None = None
 
 
 class ProviderStatus(BaseModel):

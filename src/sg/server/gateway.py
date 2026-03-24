@@ -10,7 +10,9 @@ from ..core.history import SearchHistory
 from ..models.config import GatewayConfig
 from ..models.search import (
     ExtractRequest,
+    ExtractResponse,
     ResearchRequest,
+    ResearchResponse,
     SearchRequest,
     SearchResponse,
 )
@@ -121,7 +123,7 @@ class Gateway:
         logger.info(f"Batch search completed: {len(results)}/{len(queries)} succeeded")
         return results
 
-    async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> Any:
+    async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> ExtractResponse:
         """Extract content with failover."""
         request = ExtractRequest(urls=urls, **kwargs)
 
@@ -130,9 +132,23 @@ class Gateway:
                 raise RuntimeError(f"{p.name} does not support extract")
             return await p.extract(request)
 
-        return await self.executor.execute("extract", op, provider=provider)
+        response: ExtractResponse = await self.executor.execute("extract", op, provider=provider)
+        
+        # Save to history file
+        combined_content = "\n\n".join(
+            [f"=== {r.url} ===\n" + (f"Title: {r.title}\n" if r.title else "") + (f"Error: {r.error}\n" if r.error else "") + r.content for r in response.results]
+        )
+        result_file = await self.history.record_content(
+            operation="extract",
+            query=", ".join(urls)[:100],
+            provider=response.provider,
+            latency_ms=response.latency_ms,
+            content=combined_content
+        )
+        response.result_file = result_file
+        return response
 
-    async def research(self, topic: str, depth: str = "auto", provider: str | None = None) -> Any:
+    async def research(self, topic: str, depth: str = "auto", provider: str | None = None) -> ResearchResponse:
         """Deep research with failover."""
         request = ResearchRequest(topic=topic, depth=depth)
 
@@ -141,7 +157,18 @@ class Gateway:
                 raise RuntimeError(f"{p.name} does not support research")
             return await p.research(request)
 
-        return await self.executor.execute("research", op, provider=provider)
+        response: ResearchResponse = await self.executor.execute("research", op, provider=provider)
+        
+        # Save to history file
+        result_file = await self.history.record_content(
+            operation="research",
+            query=topic,
+            provider=response.provider,
+            latency_ms=response.latency_ms,
+            content=response.content
+        )
+        response.result_file = result_file
+        return response
 
     # === Status ===
 

@@ -1,6 +1,6 @@
 [project]
 name = "search-gateway"
-version = "1.0.4"
+version = "1.0.5"
 description = "Unified search gateway with failover across multiple providers"
 readme = "README.md"
 requires-python = ">=3.11"

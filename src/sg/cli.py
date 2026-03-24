@@ -170,8 +170,9 @@ def _print_result_file(data: dict) -> None:
     results = data.get("results", [])
     total = data.get("total", 0)
 
-    click.echo(f"q: {query}")
-    click.echo(f"file: {result_file}")
+    click.echo(f"query: {query}")
+    if result_file:
+        click.echo(f"Hint: 详细结果存到了 {result_file}，请务必读取该文件获取完整的搜索结果！")
     click.echo("")
 
     preview_count = min(len(results), 5)
@@ -322,16 +323,21 @@ def extract(
         resp.raise_for_status()
         data = resp.json()
 
-        for r in data["results"]:
-            click.echo(f"\n{'=' * 60}")
+        result_file = data.get("result_file", "")
+        if result_file:
+            click.echo(f"Hint: 提取的内容（共 {len(data.get('results', []))} 个 URL）已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 结果！")
+        click.echo("")
+
+        for r in data.get("results", []):
             click.echo(f"URL: {r['url']}")
             if r.get("title"):
                 click.echo(f"Title: {r['title']}")
-            click.echo(f"{'=' * 60}")
             if r.get("error"):
-                click.echo(f"Error: {r['error']}")
+                click.echo(f"Status: Error - {r['error']}")
             else:
-                click.echo(r["content"])
+                length = len(r.get("content", ""))
+                click.echo(f"Status: Success ({length} chars)")
+            click.echo("")
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
@@ -362,7 +368,16 @@ def research(topic: str, depth: str, port: int, config: str | None):
             timeout=300.0,
         )
         resp.raise_for_status()
-        click.echo(resp.json()["content"])
+        data = resp.json()
+        result_file = data.get("result_file", "")
+        
+        if result_file:
+            click.echo(f"Hint: 深度研究报告已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 报告！")
+        click.echo("")
+        
+        content = data.get("content", "")
+        click.echo("Preview:")
+        click.echo(content[:1000] + ("\n\n...(truncated)..." if len(content) > 1000 else ""))
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
