@@ -33,11 +33,14 @@ class ExaProvider(SearchProvider, ExtractProvider):
         self._client = None
 
     async def initialize(self) -> bool:
-        api_key = self.api_key or os.environ.get("EXA_API_KEY") or os.environ.get("EXA_POOL_API_KEY")
+        api_key = (
+            self.api_key or os.environ.get("EXA_API_KEY") or os.environ.get("EXA_POOL_API_KEY")
+        )
         if not api_key:
             return False
         api_base = self.url or os.environ.get("EXA_POOL_BASE_URL")
         from exa_py import AsyncExa
+
         if api_base:
             self._client = AsyncExa(api_key=api_key, api_base=api_base)
         else:
@@ -95,19 +98,24 @@ class ExaProvider(SearchProvider, ExtractProvider):
             highlights = getattr(r, "highlights", []) or []
             content = "\n".join(highlights) if highlights else getattr(r, "text", "") or ""
 
-            results.append(SearchResult(
-                title=getattr(r, "title", "") or "",
-                url=getattr(r, "url", "") or "",
-                content=content,
-                score=getattr(r, "score", 0.0) or 0.0,
-                source=self.name,
-                published_date=getattr(r, "published_date", None),
-                author=getattr(r, "author", None),
-            ))
+            results.append(
+                SearchResult(
+                    title=getattr(r, "title", "") or "",
+                    url=getattr(r, "url", "") or "",
+                    content=content,
+                    score=getattr(r, "score", 0.0) or 0.0,
+                    source=self.name,
+                    published_date=getattr(r, "published_date", None),
+                    author=getattr(r, "author", None),
+                )
+            )
 
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:

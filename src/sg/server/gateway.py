@@ -44,8 +44,7 @@ class Gateway:
         await self.providers.initialize()
 
         available = [
-            name for name, p in self.providers.all().items()
-            if isinstance(p, SearchProvider)
+            name for name, p in self.providers.all().items() if isinstance(p, SearchProvider)
         ]
         logger.info(f"Available search providers: {available}")
         if not available:
@@ -79,7 +78,11 @@ class Gateway:
     # === Core API — all go through executor.execute() ===
 
     async def search(
-        self, query: str, provider: str | None = None, max_results: int = 10, **kwargs,
+        self,
+        query: str,
+        provider: str | None = None,
+        max_results: int = 10,
+        **kwargs,
     ) -> SearchResponse:
         """Execute search with failover."""
         request = SearchRequest(query=query, provider=provider, max_results=max_results, **kwargs)
@@ -95,13 +98,16 @@ class Gateway:
         return response
 
     async def search_batch(
-        self, queries: list[str], provider: str | None = None, max_results: int = 10, **kwargs,
+        self,
+        queries: list[str],
+        provider: str | None = None,
+        max_results: int = 10,
+        **kwargs,
     ) -> list[SearchResponse]:
         """Execute multiple searches in parallel."""
         logger.info(f"Executing batch search: {len(queries)} queries")
         tasks = [
-            self.search(q, provider=provider, max_results=max_results, **kwargs)
-            for q in queries
+            self.search(q, provider=provider, max_results=max_results, **kwargs) for q in queries
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -141,10 +147,7 @@ class Gateway:
 
     async def get_status(self) -> dict[str, Any]:
         providers = self.providers.all()
-        search_providers = [
-            name for name, p in providers.items()
-            if isinstance(p, SearchProvider)
-        ]
+        search_providers = [name for name, p in providers.items() if isinstance(p, SearchProvider)]
         return {
             "running": self._running,
             "port": self.port,

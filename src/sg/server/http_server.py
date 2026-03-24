@@ -17,6 +17,7 @@ from ..providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
+
 # Try multiple locations for Web UI
 def _find_web_ui() -> Path | None:
     # Development mode: relative to source
@@ -32,10 +33,12 @@ def _find_web_ui() -> Path | None:
 
     return None
 
+
 WEB_UI_PATH = _find_web_ui()
 
 
 # === Request bodies ===
+
 
 class SearchBody(BaseModel):
     query: str
@@ -92,8 +95,6 @@ class ProviderInstanceBody(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
 
 
-
-
 class HTTPServer:
     """HTTP REST API server."""
 
@@ -145,7 +146,8 @@ class HTTPServer:
         async def search(body: SearchBody):
             try:
                 result = await gw.search(
-                    query=body.query, provider=body.provider,
+                    query=body.query,
+                    provider=body.provider,
                     max_results=body.max_results,
                     include_domains=body.include_domains,
                     exclude_domains=body.exclude_domains,
@@ -162,7 +164,8 @@ class HTTPServer:
         async def search_batch(body: SearchBatchBody):
             try:
                 results = await gw.search_batch(
-                    queries=body.queries, provider=body.provider,
+                    queries=body.queries,
+                    provider=body.provider,
                     max_results=body.max_results,
                     include_domains=body.include_domains,
                     exclude_domains=body.exclude_domains,
@@ -179,8 +182,10 @@ class HTTPServer:
         async def extract(body: ExtractBody):
             try:
                 result = await gw.extract(
-                    urls=body.urls, provider=body.provider,
-                    format=body.format, extract_depth=body.extract_depth,
+                    urls=body.urls,
+                    provider=body.provider,
+                    format=body.format,
+                    extract_depth=body.extract_depth,
                     extra=body.extra,
                 )
                 return result.model_dump()
@@ -192,7 +197,9 @@ class HTTPServer:
         async def research(body: ResearchBody):
             try:
                 result = await gw.research(
-                    topic=body.topic, depth=body.depth, provider=body.provider,
+                    topic=body.topic,
+                    depth=body.depth,
+                    provider=body.provider,
                 )
                 return result.model_dump()
             except Exception as e:
@@ -270,7 +277,9 @@ class HTTPServer:
             return {"status": "ok", "deleted": provider_id}
 
         @self.app.put("/api/config/providers/{provider_id}/instances/{instance_id}")
-        async def upsert_provider_instance(provider_id: str, instance_id: str, body: ProviderInstanceBody):
+        async def upsert_provider_instance(
+            provider_id: str, instance_id: str, body: ProviderInstanceBody
+        ):
             raw = gw.get_config_raw()
             provider_cfg = raw.setdefault("providers", {}).setdefault(
                 provider_id,
@@ -319,8 +328,6 @@ class HTTPServer:
             provider_cfg["instances"] = new_instances
             gw.save_config_raw(raw)
             return {"status": "ok", "provider_id": provider_id, "deleted": instance_id}
-
-
 
         @self.app.post("/api/config/reload")
         async def reload_config():

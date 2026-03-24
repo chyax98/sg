@@ -19,12 +19,18 @@ def cli():
 @cli.command()
 @click.option("--port", "-p", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-@click.option("--log-level", default="INFO", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), help="Log level")
+@click.option(
+    "--log-level",
+    default="INFO",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]),
+    help="Log level",
+)
 @click.option("--log-file", default=None, help="Log file path (default: console only)")
 @click.option("--daemon", "-d", is_flag=True, help="Run in background (daemon mode)")
 def start(port: int, config: str | None, log_level: str, log_file: str | None, daemon: bool):
     """Start the gateway server."""
     import warnings
+
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
     warnings.filterwarnings("ignore")
 
@@ -40,7 +46,18 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
             log_file = str(log_dir / "gateway.log")
 
         # Build command
-        cmd = [sys.executable, "-m", "sg.cli", "start", "--port", str(port), "--log-level", log_level, "--log-file", log_file]
+        cmd = [
+            sys.executable,
+            "-m",
+            "sg.cli",
+            "start",
+            "--port",
+            str(port),
+            "--log-level",
+            log_level,
+            "--log-file",
+            log_file,
+        ]
         if config:
             cmd.extend(["--config", config])
 
@@ -58,9 +75,11 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
         # Wait a bit to check if it started successfully
         import time
+
         time.sleep(2)
 
         import httpx
+
         try:
             resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=30.0)
             if resp.status_code == 200:
@@ -70,14 +89,19 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
                 click.echo("\n  Commands:  sg status | sg stop | sg web")
                 click.echo(f"  Logs:      tail -f {log_file}\n")
             else:
-                click.echo(f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True)
+                click.echo(
+                    f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True
+                )
         except Exception:
-            click.echo(f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True)
+            click.echo(
+                f"\n⚠ Gateway may not have started correctly. Check logs: {log_file}", err=True
+            )
 
         return
 
     # Setup logging
     from ._logging import setup_logging
+
     setup_logging(log_level=log_level, log_file=log_file)
 
     click.echo(f"Starting Search Gateway on port {port}...")
@@ -87,6 +111,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
     async def run():
         from .server.gateway import Gateway
+
         gateway = Gateway(config_path=config, port=port)
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
@@ -110,6 +135,7 @@ def mcp(port: int, config: str | None):
     MCP tools for LLM integration.
     """
     import warnings
+
     warnings.filterwarnings("ignore")
 
     async def run():
@@ -129,6 +155,7 @@ def mcp(port: int, config: str | None):
 def stop(port: int):
     """Stop the gateway server."""
     import httpx
+
     try:
         httpx.post(f"http://127.0.0.1:{port}/shutdown", timeout=5.0)
         click.echo("Gateway stopped.")
@@ -171,11 +198,21 @@ def _print_result_file(data: dict) -> None:
 @click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
-@click.option("--include-domain", "include_domains", multiple=True, help="Restrict search to a domain")
-@click.option("--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search")
+@click.option(
+    "--include-domain", "include_domains", multiple=True, help="Restrict search to a domain"
+)
+@click.option(
+    "--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search"
+)
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
-@click.option("--search-depth", type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]), default="basic")
-@click.option("--extra", "-e", default=None, help="Extra params as JSON (e.g. '{\"location\":\"CN\"}')")
+@click.option(
+    "--search-depth",
+    type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]),
+    default="basic",
+)
+@click.option(
+    "--extra", "-e", default=None, help='Extra params as JSON (e.g. \'{"location":"CN"}\')'
+)
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
@@ -197,6 +234,7 @@ def search(
     ensure_gateway_running(port, config)
 
     import json
+
     extra_dict = {}
     if extra:
         try:
@@ -247,10 +285,19 @@ def search(
 @click.argument("urls", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Extract provider")
 @click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "text"]))
-@click.option("--extra", "-e", default=None, help="Extra params as JSON (e.g. '{\"device\":\"mobile\"}')")
+@click.option(
+    "--extra", "-e", default=None, help='Extra params as JSON (e.g. \'{"device":"mobile"}\')'
+)
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def extract(urls: tuple[str], provider: str | None, format: str, extra: str | None, port: int, config: str | None):
+def extract(
+    urls: tuple[str],
+    provider: str | None,
+    format: str,
+    extra: str | None,
+    port: int,
+    config: str | None,
+):
     """Extract content from URLs."""
     import httpx
 
@@ -258,6 +305,7 @@ def extract(urls: tuple[str], provider: str | None, format: str, extra: str | No
     ensure_gateway_running(port, config)
     try:
         import json
+
         extra_dict = {}
         if extra:
             try:
@@ -275,11 +323,11 @@ def extract(urls: tuple[str], provider: str | None, format: str, extra: str | No
         data = resp.json()
 
         for r in data["results"]:
-            click.echo(f"\n{'='*60}")
+            click.echo(f"\n{'=' * 60}")
             click.echo(f"URL: {r['url']}")
             if r.get("title"):
                 click.echo(f"Title: {r['title']}")
-            click.echo(f"{'='*60}")
+            click.echo(f"{'=' * 60}")
             if r.get("error"):
                 click.echo(f"Error: {r['error']}")
             else:
@@ -348,7 +396,11 @@ def status(port: int, config: str | None):
         if data.get("metrics"):
             click.echo("\n  Metrics:")
             for name, m in data["metrics"].items():
-                cb = f" [{m.get('circuit_breaker', 'closed')}]" if m.get('circuit_breaker') != 'closed' else ""
+                cb = (
+                    f" [{m.get('circuit_breaker', 'closed')}]"
+                    if m.get("circuit_breaker") != "closed"
+                    else ""
+                )
                 extra = ""
                 if m.get("disabled_seconds_remaining"):
                     extra = f", retry in {m['disabled_seconds_remaining']}s"
@@ -381,9 +433,15 @@ def providers(port: int, config: str | None):
         click.echo("\nAvailable Providers\n")
         for p in data:
             status_icon = "+" if p.get("circuit_breaker", "closed") != "open" else "-"
-            fallback = f" (fallback: {','.join(p['fallback_for'])})" if p.get("fallback_for") else ""
+            fallback = (
+                f" (fallback: {','.join(p['fallback_for'])})" if p.get("fallback_for") else ""
+            )
             ptype = f" [{p.get('type', '')}]" if p.get("type") else ""
-            cb = f" [circuit: {p['circuit_breaker']}]" if p.get("circuit_breaker") != "closed" else ""
+            cb = (
+                f" [circuit: {p['circuit_breaker']}]"
+                if p.get("circuit_breaker") != "closed"
+                else ""
+            )
             click.echo(f"  {status_icon} {p['name']}{ptype}{fallback}{cb}")
             click.echo(f"      Capabilities: {', '.join(p['capabilities'])}")
             if p.get("search_features"):
@@ -405,6 +463,7 @@ def providers(port: int, config: str | None):
 def health(port: int):
     """Run health check on all providers."""
     import httpx
+
     try:
         resp = httpx.post(f"http://127.0.0.1:{port}/health-check", timeout=30.0)
         resp.raise_for_status()
@@ -412,7 +471,9 @@ def health(port: int):
 
         click.echo("\nHealth Check Results\n")
         click.echo(f"  Healthy:   {', '.join(data['healthy']) or 'None'}")
-        unhealthy_names = [u['name'] if isinstance(u, dict) else u for u in data.get('unhealthy', [])]
+        unhealthy_names = [
+            u["name"] if isinstance(u, dict) else u for u in data.get("unhealthy", [])
+        ]
         click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
 
     except httpx.ConnectError:
@@ -428,6 +489,7 @@ def health(port: int):
 def history(entry_id: str | None, clear: bool, limit: int, port: int):
     """Show search history."""
     import httpx
+
     try:
         if clear:
             resp = httpx.delete(f"http://127.0.0.1:{port}/api/history", timeout=5.0)
@@ -493,22 +555,21 @@ def init(config: str | None):
 
     # Create default config template
     template = {
-        "server": {
-            "port": 8100
-        },
+        "server": {"port": 8100},
         "providers": {
             "duckduckgo": {
                 "type": "duckduckgo",
                 "enabled": True,
                 "priority": 100,
-                "fallback_for": ["search"]
+                "fallback_for": ["search"],
             }
-        }
+        },
     }
 
     # Save config
     config_path.parent.mkdir(parents=True, exist_ok=True)
     import json
+
     with open(config_path, "w") as f:
         json.dump(template, f, indent=2, ensure_ascii=False)
         f.write("\n")
@@ -534,6 +595,7 @@ def init(config: str | None):
 def web(port: int):
     """Open Web UI in browser."""
     import webbrowser
+
     url = f"http://127.0.0.1:{port}"
     click.echo(f"Opening {url} ...")
     webbrowser.open(url)

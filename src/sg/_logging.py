@@ -24,8 +24,7 @@ def setup_logging(log_level: str | None = None, log_file: str | None = None) -> 
 
     # Create formatters
     detailed_formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     # Configure root logger

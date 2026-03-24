@@ -34,6 +34,7 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
         if not self.api_key:
             return False
         from firecrawl import AsyncFirecrawl
+
         self._client = AsyncFirecrawl(api_key=self.api_key)
         return True
 
@@ -75,26 +76,35 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
         results = []
         for item in items:
             if isinstance(item, dict):
-                results.append(SearchResult(
-                    title=item.get("title") or "",
-                    url=item.get("url") or item.get("link") or "",
-                    content=item.get("markdown") or item.get("content") or item.get("description") or "",
-                    snippet=item.get("description") or "",
-                    score=float(item.get("score", 0)),
-                    source=self.name,
-                ))
+                results.append(
+                    SearchResult(
+                        title=item.get("title") or "",
+                        url=item.get("url") or item.get("link") or "",
+                        content=item.get("markdown")
+                        or item.get("content")
+                        or item.get("description")
+                        or "",
+                        snippet=item.get("description") or "",
+                        score=float(item.get("score", 0)),
+                        source=self.name,
+                    )
+                )
             else:
-                results.append(SearchResult(
-                    title=getattr(item, "title", "") or "",
-                    url=getattr(item, "url", "") or "",
-                    content=getattr(item, "markdown", "") or getattr(item, "content", "") or "",
-                    source=self.name,
-                ))
+                results.append(
+                    SearchResult(
+                        title=getattr(item, "title", "") or "",
+                        url=getattr(item, "url", "") or "",
+                        content=getattr(item, "markdown", "") or getattr(item, "content", "") or "",
+                        source=self.name,
+                    )
+                )
 
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results[:request.max_results],
-            total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results[: request.max_results],
+            total=len(results),
+            latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:

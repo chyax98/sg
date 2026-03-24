@@ -70,11 +70,14 @@ class SearXNGProvider(SearchProvider):
                 score=float(item.get("score", 0)),
                 source=self.name,
             )
-            for item in data.get("results", [])[:request.max_results]
+            for item in data.get("results", [])[: request.max_results]
         ]
 
         latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )

@@ -101,14 +101,16 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
 
         results = []
         for item in items:
-            results.append(SearchResult(
-                title=item.get("title") or "",
-                url=item.get("url", ""),
-                content=item.get("description", ""),
-                snippet=item.get("description", ""),
-                score=0.0,  # Xcrawl doesn't provide relevance score
-                source=self.name,
-            ))
+            results.append(
+                SearchResult(
+                    title=item.get("title") or "",
+                    url=item.get("url", ""),
+                    content=item.get("description", ""),
+                    snippet=item.get("description", ""),
+                    score=0.0,  # Xcrawl doesn't provide relevance score
+                    source=self.name,
+                )
+            )
 
         return SearchResponse(
             query=request.query,
@@ -138,9 +140,7 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
                         "only_main_content": request.extra.get("only_main_content", False),
                     },
                     "js_render": {"enabled": request.extra.get("js_render", True)},
-                    "output": {
-                        "formats": [request.format] if request.format else ["markdown"]
-                    },
+                    "output": {"formats": [request.format] if request.format else ["markdown"]},
                 }
 
                 response = await self._client.post("/v1/scrape", json=payload)

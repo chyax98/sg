@@ -45,22 +45,21 @@ def _parse_view_content(view_text: str, provider: str = "") -> list[SearchResult
             continue
         try:
             data = json.loads(line)
-            results.append(SearchResult(
-                title=data.get("title", ""),
-                url=data.get("url", ""),
-                content=data.get("content", ""),
-                snippet=data.get("content", ""),
-                score=data.get("score", 0.0),
-                source=provider,
-                published_date=data.get("published_date"),
-                author=data.get("author"),
-            ))
+            results.append(
+                SearchResult(
+                    title=data.get("title", ""),
+                    url=data.get("url", ""),
+                    content=data.get("content", ""),
+                    snippet=data.get("content", ""),
+                    score=data.get("score", 0.0),
+                    source=provider,
+                    published_date=data.get("published_date"),
+                    author=data.get("author"),
+                )
+            )
         except json.JSONDecodeError:
             continue
     return results
-
-
-
 
 
 class SearchHistory:
@@ -112,8 +111,7 @@ class SearchHistory:
         try:
             await asyncio.to_thread(view_file.write_text, view_content)
             await asyncio.to_thread(
-                trace_file.write_text,
-                json.dumps(trace_data, ensure_ascii=False)
+                trace_file.write_text, json.dumps(trace_data, ensure_ascii=False)
             )
             logger.debug(f"History saved: id={entry_id}, query='{request.query}'")
             return str(view_file)
@@ -169,8 +167,7 @@ class SearchHistory:
         try:
             await asyncio.to_thread(view_file.write_text, view_content)
             await asyncio.to_thread(
-                trace_file.write_text,
-                json.dumps(trace_data, ensure_ascii=False)
+                trace_file.write_text, json.dumps(trace_data, ensure_ascii=False)
             )
             logger.debug(f"Content saved: id={entry_id}, operation={operation}")
             return str(view_file)
@@ -190,26 +187,28 @@ class SearchHistory:
             try:
                 text = await asyncio.to_thread(f.read_text)
                 data = json.loads(text)
-                parsed_entries.append(HistoryEntry(
-                    id=data["id"],
-                    query=data["query"],
-                    provider=data["provider"],
-                    total=data["total"],
-                    latency_ms=data["latency_ms"],
-                    timestamp=data["timestamp"],
-                    results=None,
-                ))
+                parsed_entries.append(
+                    HistoryEntry(
+                        id=data["id"],
+                        query=data["query"],
+                        provider=data["provider"],
+                        total=data["total"],
+                        latency_ms=data["latency_ms"],
+                        timestamp=data["timestamp"],
+                        results=None,
+                    )
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
 
         parsed_entries.sort(key=lambda entry: entry.timestamp, reverse=True)
-        return parsed_entries[offset:offset + limit]
+        return parsed_entries[offset : offset + limit]
 
     async def get(self, entry_id: str):
         """Get full entry by reading view file (truth source)."""
         # Extract pure id from path or id string
         entry_path = Path(entry_id)
-        pure_id = entry_path.stem if entry_path.suffix in ('.txt', '.json') else entry_id
+        pure_id = entry_path.stem if entry_path.suffix in (".txt", ".json") else entry_id
 
         # Find trace file to get metadata and view_file path
         def _find_trace():

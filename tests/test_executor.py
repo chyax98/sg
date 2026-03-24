@@ -67,9 +67,7 @@ def _make_registry(group_map: dict[str, list[SearchProvider]], fallback_group: s
     """Build a mock ProviderRegistry with provider groups and instances."""
     registry = MagicMock(spec=ProviderRegistry)
     by_name = {
-        provider.name: provider
-        for providers in group_map.values()
-        for provider in providers
+        provider.name: provider for providers in group_map.values() for provider in providers
     }
     instance_to_group = {
         provider.name: group_name

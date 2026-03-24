@@ -9,7 +9,6 @@ from sg.models.search import SearchRequest
 
 
 class TestDuckDuckGoProvider:
-
     def test_provider_info(self):
         assert DuckDuckGoProvider.info.type == "duckduckgo"
         assert DuckDuckGoProvider.info.needs_api_key is False
@@ -65,7 +64,9 @@ class TestDuckDuckGoProvider:
             {"title": "Result", "href": "https://example.com", "body": "Content"},
         ]
 
-        with patch("sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        with patch(
+            "sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock
+        ) as mock_thread:
             mock_thread.return_value = mock_results
 
             request = SearchRequest(query="test", max_results=3)
@@ -82,7 +83,9 @@ class TestDuckDuckGoProvider:
         provider = DuckDuckGoProvider(name="duckduckgo")
         await provider.initialize()
 
-        with patch("sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        with patch(
+            "sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock
+        ) as mock_thread:
             mock_thread.side_effect = Exception("Network error")
 
             request = SearchRequest(query="test", max_results=3)
@@ -94,7 +97,9 @@ class TestDuckDuckGoProvider:
         provider = DuckDuckGoProvider(name="duckduckgo")
         await provider.initialize()
 
-        with patch("sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        with patch(
+            "sg.providers.duckduckgo.asyncio.to_thread", new_callable=AsyncMock
+        ) as mock_thread:
             mock_thread.return_value = []
 
             request = SearchRequest(query="news", max_results=3, time_range="week")

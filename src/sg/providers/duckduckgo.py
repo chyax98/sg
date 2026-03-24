@@ -64,6 +64,9 @@ class DuckDuckGoProvider(SearchProvider):
 
         latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )

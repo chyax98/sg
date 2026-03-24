@@ -97,18 +97,23 @@ class YouComProvider(SearchProvider, ExtractProvider):
                 snippet_text = "\n".join(snippets[:2])
                 content = f"{content}\n{snippet_text}" if content else snippet_text
 
-            results.append(SearchResult(
-                title=item.get("title", ""),
-                url=item.get("url", ""),
-                content=content.strip(),
-                source=self.name,
-                published_date=item.get("page_age"),
-            ))
+            results.append(
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    content=content.strip(),
+                    source=self.name,
+                    published_date=item.get("page_age"),
+                )
+            )
 
         latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:
@@ -128,11 +133,13 @@ class YouComProvider(SearchProvider, ExtractProvider):
 
         results = []
         for item in data:  # Response is a list
-            results.append(ExtractResult(
-                url=item.get("url", ""),
-                content=item.get("html", ""),
-                title=None,  # You.com doesn't return title in contents
-            ))
+            results.append(
+                ExtractResult(
+                    url=item.get("url", ""),
+                    content=item.get("html", ""),
+                    title=None,  # You.com doesn't return title in contents
+                )
+            )
 
         latency = (time.perf_counter() - start) * 1000
         return ExtractResponse(results=results, provider=self.name, latency_ms=latency)

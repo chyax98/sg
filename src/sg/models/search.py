@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class SearchRequest(BaseModel):
     """Search request."""
+
     query: str
     provider: str | None = None
     max_results: int = Field(default=10, ge=1, le=50)
@@ -19,6 +20,7 @@ class SearchRequest(BaseModel):
 
 class SearchResult(BaseModel):
     """Single search result."""
+
     title: str
     url: str
     content: str = ""
@@ -39,6 +41,7 @@ class SearchResult(BaseModel):
 
 class SearchResponse(BaseModel):
     """Search response."""
+
     query: str
     provider: str
     results: list[SearchResult]
@@ -49,6 +52,7 @@ class SearchResponse(BaseModel):
 
 class ExtractRequest(BaseModel):
     """Extract request."""
+
     urls: list[str]
     format: str = "markdown"
     extract_depth: str = "basic"
@@ -58,6 +62,7 @@ class ExtractRequest(BaseModel):
 
 class ExtractResult(BaseModel):
     """Extract result."""
+
     url: str
     content: str
     title: str | None = None
@@ -66,6 +71,7 @@ class ExtractResult(BaseModel):
 
 class ExtractResponse(BaseModel):
     """Extract response."""
+
     results: list[ExtractResult]
     provider: str
     latency_ms: float
@@ -73,12 +79,14 @@ class ExtractResponse(BaseModel):
 
 class ResearchRequest(BaseModel):
     """Deep research request."""
+
     topic: str
     depth: str = "auto"
 
 
 class ResearchResponse(BaseModel):
     """Deep research response."""
+
     topic: str
     content: str
     sources: list[str]
@@ -88,6 +96,7 @@ class ResearchResponse(BaseModel):
 
 class ProviderStatus(BaseModel):
     """Provider status for API responses."""
+
     name: str
     group: str = ""
     type: str = ""
@@ -104,6 +113,7 @@ class ProviderStatus(BaseModel):
 
 class HistoryEntry(BaseModel):
     """Search history entry."""
+
     id: str
     query: str
     provider: str

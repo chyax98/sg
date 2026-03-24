@@ -21,6 +21,7 @@ class ProviderCapabilityError(ValueError):
 @dataclass(frozen=True)
 class ProviderInfo:
     """Provider type metadata — declared once per provider class."""
+
     type: str
     display_name: str
     needs_api_key: bool = True
@@ -35,9 +36,16 @@ class BaseProvider(ABC):
 
     info: ClassVar[ProviderInfo]
 
-    def __init__(self, name: str, *, api_key: str | None = None,
-                 url: str | None = None, priority: int = 10,
-                 timeout: int = 30000, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        *,
+        api_key: str | None = None,
+        url: str | None = None,
+        priority: int = 10,
+        timeout: int = 30000,
+        **kwargs,
+    ):
         self.name = name
         self.api_key = api_key
         self.url = url
@@ -86,9 +94,7 @@ class SearchProvider(BaseProvider):
 
         if unsupported:
             joined = ", ".join(unsupported)
-            raise ProviderCapabilityError(
-                f"{self.name} does not support search params: {joined}"
-            )
+            raise ProviderCapabilityError(f"{self.name} does not support search params: {joined}")
 
     @staticmethod
     def apply_domain_operators(
@@ -104,21 +110,18 @@ class SearchProvider(BaseProvider):
         return query
 
     @abstractmethod
-    async def search(self, request: SearchRequest) -> SearchResponse:
-        ...
+    async def search(self, request: SearchRequest) -> SearchResponse: ...
 
 
 class ExtractProvider(BaseProvider):
     """Provider with extract capability."""
 
     @abstractmethod
-    async def extract(self, request: ExtractRequest) -> ExtractResponse:
-        ...
+    async def extract(self, request: ExtractRequest) -> ExtractResponse: ...
 
 
 class ResearchProvider(BaseProvider):
     """Provider with research capability."""
 
     @abstractmethod
-    async def research(self, request: ResearchRequest) -> ResearchResponse:
-        ...
+    async def research(self, request: ResearchRequest) -> ResearchResponse: ...

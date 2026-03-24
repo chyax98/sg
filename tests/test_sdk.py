@@ -8,7 +8,6 @@ from sg.models.search import SearchResponse
 
 
 class TestSearchClient:
-
     @pytest.fixture
     def mock_response(self):
         return {
@@ -126,7 +125,7 @@ class TestSearchClient:
         mock_resp.json.return_value = {
             "running": True,
             "port": 8100,
-            "strategy": "failover",
+            "strategy": "priority",
             "providers": {"total": 1, "available": ["duckduckgo"]},
             "metrics": {},
         }
@@ -137,7 +136,7 @@ class TestSearchClient:
         status = client.get_status()
 
         assert status["running"] is True
-        assert status["strategy"] == "failover"
+        assert status["strategy"] == "priority"
 
     @patch("httpx.Client.post")
     def test_health_check(self, mock_post):
@@ -160,7 +159,6 @@ class TestSearchClient:
 
 
 class TestAsyncSearchClient:
-
     @pytest.fixture
     def mock_response(self):
         return {
@@ -206,9 +204,7 @@ class TestAsyncSearchClient:
     @patch("httpx.AsyncClient.get")
     async def test_list_providers(self, mock_get):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = [
-            {"name": "duckduckgo", "healthy": True}
-        ]
+        mock_resp.json.return_value = [{"name": "duckduckgo", "healthy": True}]
         mock_resp.raise_for_status = MagicMock()
         mock_get.return_value = mock_resp
 

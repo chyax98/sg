@@ -48,9 +48,6 @@ class TestProviderConfig:
         assert instance.timeout == 15000
 
 
-
-
-
 class TestExecutorConfig:
     def test_defaults(self):
         config = ExecutorConfig()
@@ -115,7 +112,7 @@ class TestGatewayConfig:
                             ],
                         }
                     },
-                    "executor": {"strategy": "random"},
+                    "executor": {},
                 }
             )
         )
@@ -133,13 +130,7 @@ class TestGatewayConfig:
     def test_rejects_flat_provider_shape(self, tmp_path):
         config_file = tmp_path / "config.json"
         config_file.write_text(
-            json.dumps(
-                {
-                    "providers": {
-                        "tavily-main": {"type": "tavily", "api_key": "key1"}
-                    }
-                }
-            )
+            json.dumps({"providers": {"tavily-main": {"type": "tavily", "api_key": "key1"}}})
         )
 
         with pytest.raises(ValidationError):

@@ -23,7 +23,7 @@ class TestGatewayInit:
 
     def test_gateway_uses_executor_config(self, tmp_path):
         config_file = tmp_path / "config.json"
-        config_file.write_text('{}')
+        config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19001)
         assert gateway.config.executor.failover.max_attempts == 3
@@ -146,7 +146,7 @@ class TestGatewayStatus:
     @pytest.mark.asyncio
     async def test_get_status(self, tmp_path):
         config_file = tmp_path / "config.json"
-        config_file.write_text('{}')
+        config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19040)
         gateway._running = True

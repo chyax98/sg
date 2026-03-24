@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 class FailureType:
     """Classify failures to determine breaker behavior."""
-    TRANSIENT = "transient"    # timeout, 500, 502, 503 — normal backoff
-    QUOTA = "quota"            # 429, quota exceeded — long disable
-    AUTH = "auth"              # 401, 403 — disable until manual fix
-    UNKNOWN = "unknown"        # default — treat as transient
+
+    TRANSIENT = "transient"  # timeout, 500, 502, 503 — normal backoff
+    QUOTA = "quota"  # 429, quota exceeded — long disable
+    AUTH = "auth"  # 401, 403 — disable until manual fix
+    UNKNOWN = "unknown"  # default — treat as transient
 
 
 class CircuitBreaker:
@@ -33,12 +34,12 @@ class CircuitBreaker:
     def __init__(
         self,
         failure_threshold: int = 3,
-        base_timeout: float = 3600.0,      # 1 hour
-        multiplier: float = 6.0,            # 1h → 6h → 36h
-        max_timeout: float = 172800.0,      # 48 hours cap
+        base_timeout: float = 3600.0,  # 1 hour
+        multiplier: float = 6.0,  # 1h → 6h → 36h
+        max_timeout: float = 172800.0,  # 48 hours cap
         success_threshold: int = 2,
-        quota_timeout: float = 86400.0,     # 24h for quota errors
-        auth_timeout: float = 604800.0,     # 7 days for auth errors
+        quota_timeout: float = 86400.0,  # 24h for quota errors
+        auth_timeout: float = 604800.0,  # 7 days for auth errors
     ):
         self.failure_threshold = failure_threshold
         self.base_timeout = base_timeout
@@ -51,7 +52,7 @@ class CircuitBreaker:
         self._state = self.CLOSED
         self._failure_count = 0
         self._success_count = 0
-        self._trip_count = 0            # how many times breaker has opened
+        self._trip_count = 0  # how many times breaker has opened
         self._last_failure_time = 0.0
         self._current_timeout = base_timeout
         self._last_failure_type = FailureType.TRANSIENT
@@ -66,7 +67,9 @@ class CircuitBreaker:
                 logger.info("Circuit breaker entering HALF_OPEN state for probing")
                 self._state = self.HALF_OPEN
                 self._success_count = 0
-            elif not self._disabled_until and now - self._last_failure_time >= self._current_timeout:
+            elif (
+                not self._disabled_until and now - self._last_failure_time >= self._current_timeout
+            ):
                 logger.info("Circuit breaker entering HALF_OPEN state for probing")
                 self._state = self.HALF_OPEN
                 self._success_count = 0

@@ -23,8 +23,6 @@ class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-
-
 class InstanceSelection(StrEnum):
     """Within-provider instance selection strategy."""
 

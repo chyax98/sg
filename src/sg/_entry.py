@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Entry point wrapper to suppress warnings."""
+
 import os
 import warnings
 
@@ -11,6 +12,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 def main():
     from sg.cli import cli
+
     cli()
 
 

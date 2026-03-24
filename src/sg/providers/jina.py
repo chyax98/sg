@@ -83,19 +83,24 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
 
         results = []
         for item in data.get("data", []):
-            results.append(SearchResult(
-                title=item.get("title", ""),
-                url=item.get("url", ""),
-                content=item.get("content", ""),
-                source=self.name,
-            ))
+            results.append(
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    content=item.get("content", ""),
+                    source=self.name,
+                )
+            )
             if len(results) >= request.max_results:
                 break
 
         latency = (time.perf_counter() - start) * 1000
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:
@@ -114,11 +119,13 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
                 resp.raise_for_status()
                 data = resp.json()
 
-                results.append(ExtractResult(
-                    url=url,
-                    content=data.get("data", {}).get("content", resp.text),
-                    title=data.get("data", {}).get("title"),
-                ))
+                results.append(
+                    ExtractResult(
+                        url=url,
+                        content=data.get("data", {}).get("content", resp.text),
+                        title=data.get("data", {}).get("title"),
+                    )
+                )
             except Exception as e:
                 results.append(ExtractResult(url=url, content="", error=str(e)))
 

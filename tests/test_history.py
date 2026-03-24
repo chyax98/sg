@@ -26,8 +26,18 @@ def sample_response():
         query="test query",
         provider="duckduckgo",
         results=[
-            SearchResult(title="Result 1", url="https://example.com/1", content="Content 1", source="duckduckgo"),
-            SearchResult(title="Result 2", url="https://example.com/2", content="Content 2\nLine 2", source="duckduckgo"),
+            SearchResult(
+                title="Result 1",
+                url="https://example.com/1",
+                content="Content 1",
+                source="duckduckgo",
+            ),
+            SearchResult(
+                title="Result 2",
+                url="https://example.com/2",
+                content="Content 2\nLine 2",
+                source="duckduckgo",
+            ),
         ],
         total=2,
         latency_ms=150.0,
@@ -41,17 +51,17 @@ class TestViewFormat:
         """View should be JSONL format - one JSON object per line."""
         content = _format_view_content(sample_response)
         lines = content.strip().split("\n")
-        
+
         # Each line should be valid JSON
         assert len(lines) == 2
         data1 = json.loads(lines[0])
         data2 = json.loads(lines[1])
-        
+
         assert data1["index"] == 1
         assert data1["title"] == "Result 1"
         assert data1["url"] == "https://example.com/1"
         assert data1["content"] == "Content 1"
-        
+
         assert data2["index"] == 2
         assert data2["content"] == "Content 2\nLine 2"  # Newlines preserved in JSON
 
@@ -59,7 +69,7 @@ class TestViewFormat:
         """JSONL should be reversible."""
         content = _format_view_content(sample_response)
         results = _parse_view_content(content, "duckduckgo")
-        
+
         assert len(results) == 2
         assert results[0].title == "Result 1"
         assert results[0].content == "Content 1"
@@ -69,15 +79,15 @@ class TestViewFormat:
     def test_line_oriented_format(self, sample_response):
         """Each result is on its own line - supports line-level reading."""
         content = _format_view_content(sample_response)
-        
+
         # Line 1 = result [1], Line 2 = result [2]
         lines = content.strip().split("\n")
         assert len(lines) == 2
-        
+
         # Can read specific line to get specific result
         line1_data = json.loads(lines[0])
         assert line1_data["index"] == 1
-        
+
         line2_data = json.loads(lines[1])
         assert line2_data["index"] == 2
 
@@ -89,11 +99,11 @@ class TestSearchHistory:
     async def test_record_creates_jsonl_view(self, history, sample_response):
         req = SearchRequest(query="test", max_results=5)
         view_file = await history.record(req, sample_response)
-        
+
         # View file should be JSONL
         view_path = history.view_dir / "2026-03" / view_file.split("/")[-1]
         content = view_path.read_text()
-        
+
         # Each line is valid JSON
         for line in content.strip().split("\n"):
             data = json.loads(line)
@@ -107,9 +117,9 @@ class TestSearchHistory:
         req = SearchRequest(query="test", max_results=5)
         view_file = await history.record(req, sample_response)
         entry_id = view_file.split("/")[-1].replace(".txt", "")
-        
+
         entry = await history.get(entry_id)
-        
+
         assert entry is not None
         assert len(entry.results) == 2
         assert entry.results[0].title == "Result 1"
@@ -120,13 +130,13 @@ class TestSearchHistory:
         """Simulate AI reading only line 2 (result [2])."""
         req = SearchRequest(query="test", max_results=5)
         view_file = await history.record(req, sample_response)
-        
+
         view_path = history.view_dir / "2026-03" / view_file.split("/")[-1]
         lines = view_path.read_text().strip().split("\n")
-        
+
         # AI wants only result [2] - read line 2
         line2 = lines[1]  # 0-indexed, so line 2 is index 1
         data = json.loads(line2)
-        
+
         assert data["index"] == 2
         assert data["title"] == "Result 2"

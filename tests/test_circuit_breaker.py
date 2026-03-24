@@ -6,7 +6,6 @@ from sg.core.circuit_breaker import CircuitBreaker, FailureType
 
 
 class TestCircuitBreakerStates:
-
     def test_initial_state_is_closed(self):
         cb = CircuitBreaker()
         assert cb.state == CircuitBreaker.CLOSED
@@ -127,7 +126,6 @@ class TestCircuitBreakerStates:
 
 
 class TestCircuitBreakerReset:
-
     def test_reset_clears_all_state(self):
         cb = CircuitBreaker(failure_threshold=1)
         cb.record_failure()
@@ -142,7 +140,6 @@ class TestCircuitBreakerReset:
 
 
 class TestCircuitBreakerRecoveryTimeout:
-
     def test_stays_open_before_timeout(self):
         cb = CircuitBreaker(failure_threshold=1, base_timeout=60.0)
         cb.record_failure()

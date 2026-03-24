@@ -27,7 +27,9 @@ def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
     for i, r in enumerate(results[:max_preview], 1):
         score = r.get("score")
         score_str = f"{score:.2f}" if score else "-"
-        title = r.get("title", "")[:50] + "..." if len(r.get("title", "")) > 50 else r.get("title", "")
+        title = (
+            r.get("title", "")[:50] + "..." if len(r.get("title", "")) > 50 else r.get("title", "")
+        )
         url = r.get("url", "")
         lines.append(f"  {i},{title},{url},{score_str}")
 
@@ -133,16 +135,19 @@ class MCPServer:
             - Read the view file for full results
             - Each result has [N] marker for easy navigation
             """
-            result = await self._call_gateway("/search", {
-                "query": query,
-                "provider": provider,
-                "max_results": max_results,
-                "include_domains": include_domains or [],
-                "exclude_domains": exclude_domains or [],
-                "time_range": time_range,
-                "search_depth": search_depth,
-                "extra": extra or {},
-            })
+            result = await self._call_gateway(
+                "/search",
+                {
+                    "query": query,
+                    "provider": provider,
+                    "max_results": max_results,
+                    "include_domains": include_domains or [],
+                    "exclude_domains": exclude_domains or [],
+                    "time_range": time_range,
+                    "search_depth": search_depth,
+                    "extra": extra or {},
+                },
+            )
 
             return _format_toon_preview(result)
 
@@ -182,11 +187,14 @@ class MCPServer:
             Note: Content is returned directly (also saved to file for record keeping).
             For very long pages, content may be truncated to first 5000 characters per URL.
             """
-            result = await self._call_gateway("/extract", {
-                "urls": urls,
-                "format": format,
-                "extra": extra or {},
-            })
+            result = await self._call_gateway(
+                "/extract",
+                {
+                    "urls": urls,
+                    "format": format,
+                    "extra": extra or {},
+                },
+            )
 
             # Format content for display
             lines = []
@@ -234,10 +242,13 @@ class MCPServer:
             Note: Research content is returned directly (also saved to file for record keeping).
             This operation may take longer than simple search (10-30 seconds depending on depth).
             """
-            result = await self._call_gateway("/research", {
-                "topic": topic,
-                "depth": depth,
-            })
+            result = await self._call_gateway(
+                "/research",
+                {
+                    "topic": topic,
+                    "depth": depth,
+                },
+            )
 
             return result.get("content", "")
 

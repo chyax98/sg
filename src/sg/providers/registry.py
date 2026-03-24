@@ -58,9 +58,7 @@ class ProviderRegistry:
     async def initialize(self) -> None:
         """Initialize configured provider groups and fallback."""
         groups = dict(self._config)
-        has_explicit_fallback = any(
-            cfg.enabled and cfg.fallback_for for cfg in groups.values()
-        )
+        has_explicit_fallback = any(cfg.enabled and cfg.fallback_for for cfg in groups.values())
 
         if not has_explicit_fallback and "duckduckgo" not in groups:
             ddg_config = ProviderConfig(
@@ -184,10 +182,14 @@ class ProviderRegistry:
             available.append(provider)
 
         if not available:
-            logger.warning(f"No available instances in group '{group_name}' for capability '{capability}'")
+            logger.warning(
+                f"No available instances in group '{group_name}' for capability '{capability}'"
+            )
             return None
 
-        logger.debug(f"Selecting instance from group '{group_name}', strategy={cfg.selection}, available={len(available)}")
+        logger.debug(
+            f"Selecting instance from group '{group_name}', strategy={cfg.selection}, available={len(available)}"
+        )
 
         if cfg.selection == InstanceSelection.PRIORITY:
             selected = min(available, key=lambda provider: provider.priority)
@@ -239,7 +241,9 @@ class ProviderRegistry:
                     capabilities=provider.capabilities,
                     search_features=getattr(provider, "search_features", []),
                     priority=provider.priority,
-                    fallback_for=self._config[group_name].fallback_for if self._config.get(group_name) else [],
+                    fallback_for=self._config[group_name].fallback_for
+                    if self._config.get(group_name)
+                    else [],
                 )
             )
         return result

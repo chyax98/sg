@@ -127,9 +127,7 @@ class Executor:
 
             disabled_hours = breaker.current_timeout_seconds / 3600
             if failure_type == FailureType.AUTH:
-                logger.error(
-                    f"Provider {name}: auth failure, disabled for {disabled_hours:.0f}h"
-                )
+                logger.error(f"Provider {name}: auth failure, disabled for {disabled_hours:.0f}h")
             elif failure_type == FailureType.QUOTA:
                 logger.warning(
                     f"Provider {name}: quota exceeded, disabled for {disabled_hours:.0f}h"
@@ -198,7 +196,9 @@ class Executor:
                         group_name,
                         capability,
                         excluded_instances=attempted_instances,
-                        allow_request=lambda instance_id: self._breaker(instance_id).allow_request(),
+                        allow_request=lambda instance_id: self._breaker(
+                            instance_id
+                        ).allow_request(),
                     )
                     if not provider_instance:
                         break

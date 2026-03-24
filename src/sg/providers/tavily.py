@@ -38,6 +38,7 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
         if not api_key:
             return False
         from tavily import AsyncTavilyClient
+
         self._client = AsyncTavilyClient(api_key=api_key)
         return True
 
@@ -90,8 +91,11 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
         ]
 
         return SearchResponse(
-            query=request.query, provider=self.name,
-            results=results, total=len(results), latency_ms=latency,
+            query=request.query,
+            provider=self.name,
+            results=results,
+            total=len(results),
+            latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:

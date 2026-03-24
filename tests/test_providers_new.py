@@ -10,7 +10,6 @@ from sg.providers.base import ProviderInfo
 
 
 class TestJinaReaderProvider:
-
     def test_provider_info(self):
         assert JinaReaderProvider.info.type == "jina"
         assert JinaReaderProvider.info.needs_api_key is False
@@ -72,7 +71,6 @@ class TestJinaReaderProvider:
 
 
 class TestFirecrawlProvider:
-
     def test_provider_info(self):
         assert FirecrawlProvider.info.type == "firecrawl"
         assert FirecrawlProvider.info.needs_api_key is True
@@ -114,7 +112,6 @@ class TestFirecrawlProvider:
 
 
 class TestYouComProvider:
-
     def test_provider_info(self):
         assert YouComProvider.info.type == "youcom"
         assert YouComProvider.info.needs_api_key is True
