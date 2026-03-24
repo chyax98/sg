@@ -98,12 +98,23 @@ sg history            # 查看搜索历史
 
 #### Claude Code
 
-写入 `~/.claude/settings.json`（或项目级 `.claude/settings.json`）的 `mcpServers` 字段：
+通过 CLI 命令添加（不是手写 JSON）：
+
+```bash
+claude mcp add --transport stdio --scope user sg -- sg mcp
+```
+
+- `--scope user`：全局生效（所有项目）
+- `--scope project`：仅当前项目（写入 `.mcp.json`）
+- 配置存储在 `~/.claude.json` 中
+
+如果你有权限直接编辑，也可以在 `~/.claude.json` 中合并：
 
 ```json
 {
   "mcpServers": {
     "sg": {
+      "type": "stdio",
       "command": "sg",
       "args": ["mcp"]
     }
@@ -111,7 +122,15 @@ sg history            # 查看搜索历史
 }
 ```
 
-注意：如果文件已存在，需要合并到现有的 `mcpServers` 中，不要覆盖已有配置。
+#### OpenAI Codex
+
+写入 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.sg]
+command = "sg"
+args = ["mcp"]
+```
 
 #### Google Gemini CLI
 
@@ -128,20 +147,7 @@ sg history            # 查看搜索历史
 }
 ```
 
-#### OpenAI Codex
-
-Codex 支持 MCP Server。写入 `~/.codex/config.json` 或全局配置：
-
-```json
-{
-  "mcpServers": {
-    "sg": {
-      "command": "sg",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+注意：如果文件已存在，需要合并到现有的 `mcpServers` 中，不要覆盖已有配置。
 
 #### Kimi CLI
 
@@ -155,10 +161,10 @@ args = ["mcp"]
 
 **操作步骤：**
 
-1. 检查各工具的配置文件是否存在
-2. 如果存在，读取并检查是否已配置 sg MCP server
-3. 如果没有，合并写入（注意不覆盖已有配置）
-4. 如果配置文件不存在，创建并写入
+1. 根据工具类型选择正确的配置方式（CLI 命令或编辑配置文件）
+2. Claude Code 优先使用 `claude mcp add` 命令；如果无法执行 CLI 命令，再编辑 `~/.claude.json`
+3. Codex / Kimi 编辑 TOML 配置文件，合并到已有配置中
+4. Gemini 编辑 JSON 配置文件，合并到已有配置中
 5. 写完后提醒用户：MCP 配置修改后需要重启对应工具才能生效
 
 ### 选项 3：配置搜索 Provider
