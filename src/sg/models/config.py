@@ -1,7 +1,7 @@
 """Configuration models."""
 
 import json
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Strategy(str, Enum):
+class Strategy(StrEnum):
     """Cross-provider selection strategy."""
 
     FAILOVER = "failover"
@@ -31,7 +31,7 @@ class Strategy(str, Enum):
     RANDOM = "random"
 
 
-class InstanceSelection(str, Enum):
+class InstanceSelection(StrEnum):
     """Within-provider instance selection strategy."""
 
     RANDOM = "random"
@@ -43,7 +43,6 @@ class ProviderDefaultsConfig(StrictConfigModel):
     """Shared provider-level defaults inherited by instances."""
 
     timeout: int = 30000
-    env: dict[str, str] = Field(default_factory=dict)
 
 
 class ProviderInstanceConfig(StrictConfigModel):
@@ -55,7 +54,6 @@ class ProviderInstanceConfig(StrictConfigModel):
     url: str | None = None
     timeout: int | None = None
     priority: int = 10
-    env: dict[str, str] = Field(default_factory=dict)
 
 
 class ProviderConfig(StrictConfigModel):

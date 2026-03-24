@@ -6,7 +6,7 @@ import random
 import threading
 from collections.abc import Callable
 
-from ..models.config import ProviderConfig, ProviderInstanceConfig
+from ..models.config import InstanceSelection, ProviderConfig, ProviderInstanceConfig
 from ..models.search import ProviderStatus
 from .base import BaseProvider, ExtractProvider, ResearchProvider, SearchProvider
 
@@ -189,9 +189,9 @@ class ProviderRegistry:
 
         logger.debug(f"Selecting instance from group '{group_name}', strategy={cfg.selection}, available={len(available)}")
 
-        if cfg.selection == "priority":
+        if cfg.selection == InstanceSelection.PRIORITY:
             selected = min(available, key=lambda provider: provider.priority)
-        elif cfg.selection == "round_robin":
+        elif cfg.selection == InstanceSelection.ROUND_ROBIN:
             available = sorted(available, key=lambda provider: provider.priority)
             with self._rr_lock:
                 idx = self._rr_index.get(group_name, 0) % len(available)

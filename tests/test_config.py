@@ -28,7 +28,6 @@ class TestProviderConfig:
         assert config.selection == InstanceSelection.RANDOM
         assert config.fallback_for == []
         assert config.defaults.timeout == 30000
-        assert config.defaults.env == {}
         assert config.instances == []
 
     def test_group_with_instances(self):

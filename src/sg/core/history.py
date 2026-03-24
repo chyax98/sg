@@ -87,7 +87,7 @@ class SearchHistory:
         """Save search result. Returns view file path."""
         now = datetime.now()
         ts = int(time.time() * 1000)
-        entry_id = f"{ts}-{uuid.uuid4().hex[:4]}"
+        entry_id = f"{ts}-{uuid.uuid4().hex[:8]}"
         month = now.strftime("%Y-%m")
 
         view_month, trace_month = self._ensure_dirs(month)
@@ -136,7 +136,7 @@ class SearchHistory:
         """
         now = datetime.now()
         ts = int(time.time() * 1000)
-        entry_id = f"{ts}-{uuid.uuid4().hex[:4]}"
+        entry_id = f"{ts}-{uuid.uuid4().hex[:8]}"
         month = now.strftime("%Y-%m")
 
         view_month, trace_month = self._ensure_dirs(month)

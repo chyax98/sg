@@ -32,9 +32,9 @@ class SearchResult(BaseModel):
 
     def model_post_init(self, __context):
         if self.snippet and not self.content:
-            self.content = self.snippet
-        if self.content and not self.snippet:
-            self.snippet = self.content
+            object.__setattr__(self, "content", self.snippet)
+        elif self.content and not self.snippet:
+            object.__setattr__(self, "snippet", self.content)
 
 
 class SearchResponse(BaseModel):
@@ -75,7 +75,6 @@ class ResearchRequest(BaseModel):
     """Deep research request."""
     topic: str
     depth: str = "auto"
-    max_sources: int = 10
 
 
 class ResearchResponse(BaseModel):

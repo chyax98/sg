@@ -198,6 +198,12 @@ class AsyncSearchClient:
         data: dict[str, Any] = resp.json()
         return data
 
+    async def health_check(self) -> dict[str, Any]:
+        resp = await self._client.post(f"{self.base_url}/health-check")
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        return data
+
     async def close(self):
         await self._client.aclose()
 

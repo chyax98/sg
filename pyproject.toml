@@ -39,6 +39,7 @@ packages = ["src/sg"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "web" = "share/search-gateway/web"
+"prompts" = "share/search-gateway/prompts"
 
 [tool.ruff]
 line-length = 100

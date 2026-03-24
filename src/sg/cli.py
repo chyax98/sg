@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import click
 
@@ -536,6 +537,54 @@ def web(port: int):
     url = f"http://127.0.0.1:{port}"
     click.echo(f"Opening {url} ...")
     webbrowser.open(url)
+
+
+@cli.command()
+@click.option("--copy", is_flag=True, help="Copy prompt to clipboard")
+def setup(copy: bool):
+    """Output setup prompt for AI coding assistants."""
+    prompt_path = _find_prompt("setup.md")
+    if not prompt_path:
+        click.echo("Error: setup.md not found", err=True)
+        sys.exit(1)
+
+    prompt = prompt_path.read_text()
+    if copy:
+        import subprocess
+
+        try:
+            subprocess.run(["pbcopy"], input=prompt.encode(), check=True)
+            click.echo("Prompt copied to clipboard. Paste it to your AI agent to start setup.")
+        except FileNotFoundError:
+            try:
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"],
+                    input=prompt.encode(),
+                    check=True,
+                )
+                click.echo("Prompt copied to clipboard. Paste it to your AI agent to start setup.")
+            except FileNotFoundError:
+                click.echo("Error: no clipboard tool found (pbcopy/xclip)", err=True)
+                click.echo("Use 'sg setup' without --copy to print the prompt.", err=True)
+                sys.exit(1)
+    else:
+        click.echo(prompt)
+
+
+def _find_prompt(name: str) -> Path | None:
+    """Find a prompt file in dev or installed location."""
+    # Development mode: relative to source
+    dev_path = Path(__file__).parent.parent.parent / "prompts" / name
+    if dev_path.exists():
+        return dev_path
+
+    # Installed mode: in share directory
+    if sys.prefix:
+        installed_path = Path(sys.prefix) / "share" / "search-gateway" / "prompts" / name
+        if installed_path.exists():
+            return installed_path
+
+    return None
 
 
 if __name__ == "__main__":
