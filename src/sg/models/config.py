@@ -23,12 +23,6 @@ class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Strategy(StrEnum):
-    """Cross-provider selection strategy."""
-
-    FAILOVER = "failover"
-    ROUND_ROBIN = "round_robin"
-    RANDOM = "random"
 
 
 class InstanceSelection(StrEnum):
@@ -95,7 +89,6 @@ class FailoverConfig(StrictConfigModel):
 class ExecutorConfig(StrictConfigModel):
     """Executor configuration."""
 
-    strategy: Strategy = Strategy.ROUND_ROBIN
     health_check: HealthCheckConfig = Field(default_factory=HealthCheckConfig)
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     failover: FailoverConfig = Field(default_factory=FailoverConfig)

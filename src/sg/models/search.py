@@ -32,9 +32,9 @@ class SearchResult(BaseModel):
 
     def model_post_init(self, __context):
         if self.snippet and not self.content:
-            object.__setattr__(self, "content", self.snippet)
+            self.content = self.snippet
         elif self.content and not self.snippet:
-            object.__setattr__(self, "snippet", self.content)
+            self.snippet = self.content
 
 
 class SearchResponse(BaseModel):

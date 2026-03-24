@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from ..models.config import InstanceSelection, ProviderDefaultsConfig, Strategy
+from ..models.config import InstanceSelection, ProviderDefaultsConfig
 from ..providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -92,8 +92,6 @@ class ProviderInstanceBody(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
 
 
-class SettingsBody(BaseModel):
-    strategy: Strategy | None = None
 
 
 class HTTPServer:
@@ -322,13 +320,7 @@ class HTTPServer:
             gw.save_config_raw(raw)
             return {"status": "ok", "provider_id": provider_id, "deleted": instance_id}
 
-        @self.app.put("/api/config/settings")
-        async def update_settings(body: SettingsBody):
-            raw = gw.get_config_raw()
-            if body.strategy is not None:
-                raw.setdefault("executor", {})["strategy"] = body.strategy.value
-            gw.save_config_raw(raw)
-            return {"status": "ok"}
+
 
         @self.app.post("/api/config/reload")
         async def reload_config():

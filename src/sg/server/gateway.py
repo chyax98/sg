@@ -103,7 +103,15 @@ class Gateway:
             self.search(q, provider=provider, max_results=max_results, **kwargs)
             for q in queries
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: list[SearchResponse] = []
+        for i, r in enumerate(raw_results):
+            if isinstance(r, Exception):
+                logger.error(f"Batch search query '{queries[i]}' failed: {r}")
+            else:
+                results.append(r)
+
         logger.info(f"Batch search completed: {len(results)}/{len(queries)} succeeded")
         return results
 
@@ -140,7 +148,7 @@ class Gateway:
         return {
             "running": self._running,
             "port": self.port,
-            "strategy": self.config.executor.strategy.value,
+            "strategy": "priority",  # always priority-based failover
             "providers": {
                 "total": len(providers),
                 "available": search_providers,

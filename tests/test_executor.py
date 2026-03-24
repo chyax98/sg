@@ -12,7 +12,6 @@ from sg.models.config import (
     ExecutorConfig,
     FailoverConfig,
     HealthCheckConfig,
-    Strategy,
 )
 from sg.models.search import SearchRequest, SearchResponse
 from sg.providers.base import ProviderInfo, SearchProvider
@@ -112,7 +111,6 @@ def _make_registry(group_map: dict[str, list[SearchProvider]], fallback_group: s
 
 def _make_config(**overrides):
     defaults = {
-        "strategy": Strategy.ROUND_ROBIN,
         "health_check": HealthCheckConfig(failure_threshold=3, success_threshold=2),
         "circuit_breaker": CircuitBreakerConfig(base_timeout=60),
         "failover": FailoverConfig(max_attempts=3),
@@ -275,8 +273,8 @@ class TestExecuteStrategy:
                 "p3": [FakeProvider(name="p3-1")],
             }
         )
-        # Strategy no longer affects group ordering
-        executor = Executor(_make_config(strategy=Strategy.ROUND_ROBIN), registry)
+        # Groups are always ordered by priority
+        executor = Executor(_make_config(), registry)
 
         # Groups are always returned in priority order (from get_group_order mock)
         assert executor._candidate_groups("search") == ["p1", "p2", "p3"]
@@ -293,7 +291,7 @@ class TestExecuteStrategy:
                 "p4": [FakeProvider(name="p4-1")],
             }
         )
-        executor = Executor(_make_config(strategy=Strategy.RANDOM), registry)
+        executor = Executor(_make_config(), registry)
 
         # Groups are always returned in priority order, regardless of strategy
         orderings = {tuple(executor._candidate_groups("search")) for _ in range(20)}
@@ -382,7 +380,7 @@ class TestExecuteCircuitBreaker:
                 "domain": [DomainAwareProvider(name="domain-1")],
             }
         )
-        executor = Executor(_make_config(strategy=Strategy.FAILOVER), registry)
+        executor = Executor(_make_config(), registry)
         request = SearchRequest(query="test", include_domains=["example.com"])
 
         async def op(provider):
@@ -411,7 +409,7 @@ class TestExecuteCircuitBreaker:
                 "domain": [DomainAwareProvider(name="domain-1")],
             }
         )
-        executor = Executor(_make_config(strategy=Strategy.FAILOVER), registry)
+        executor = Executor(_make_config(), registry)
         request = SearchRequest(query="test", include_domains=["example.com"])
 
         async def op(provider):

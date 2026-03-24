@@ -119,11 +119,15 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
 
         start = time.perf_counter()
 
+        # Derive max_results from depth
+        depth_map = {"mini": 5, "pro": 20, "auto": 10}
+        max_results = depth_map.get(request.depth, 10)
+
         # tavily-python SDK handles the polling internally
         data = await self._client.search(
             query=request.topic,
             search_depth="advanced",
-            max_results=request.max_sources,
+            max_results=max_results,
             include_raw_content=True,
         )
         latency = (time.perf_counter() - start) * 1000

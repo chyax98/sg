@@ -41,7 +41,8 @@ def start_gateway_background(port: int = 8100, config: str | None = None) -> boo
     return False
 
 
-def ensure_gateway_running(port: int = 8100, config: str | None = None) -> None:
-    """Ensure gateway is running, start if needed."""
-    if not is_gateway_running(port):
-        start_gateway_background(port, config)
+def ensure_gateway_running(port: int = 8100, config: str | None = None) -> bool:
+    """Ensure gateway is running, start if needed. Returns True if running."""
+    if is_gateway_running(port):
+        return True
+    return start_gateway_background(port, config)

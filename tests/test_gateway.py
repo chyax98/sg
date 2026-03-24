@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from sg.core.executor import Executor
-from sg.models.config import Strategy
+
 from sg.models.search import SearchResponse
 from sg.providers.registry import ProviderRegistry
 from sg.server.gateway import Gateway
@@ -23,10 +23,10 @@ class TestGatewayInit:
 
     def test_gateway_uses_executor_config(self, tmp_path):
         config_file = tmp_path / "config.json"
-        config_file.write_text('{"executor": {"strategy": "random"}}')
+        config_file.write_text('{}')
 
         gateway = Gateway(config_path=str(config_file), port=19001)
-        assert gateway.config.executor.strategy == Strategy.RANDOM
+        assert gateway.config.executor.failover.max_attempts == 3
 
     def test_gateway_port_override(self, tmp_path):
         config_file = tmp_path / "config.json"
@@ -146,7 +146,7 @@ class TestGatewayStatus:
     @pytest.mark.asyncio
     async def test_get_status(self, tmp_path):
         config_file = tmp_path / "config.json"
-        config_file.write_text('{"executor": {"strategy": "failover"}}')
+        config_file.write_text('{}')
 
         gateway = Gateway(config_path=str(config_file), port=19040)
         gateway._running = True
@@ -157,7 +157,7 @@ class TestGatewayStatus:
 
         assert status["running"] is True
         assert status["port"] == 19040
-        assert status["strategy"] == "failover"
+        assert status["strategy"] == "priority"
         assert "providers" in status
         assert "metrics" in status
 

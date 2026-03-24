@@ -15,7 +15,6 @@ from sg.models.config import (
     InstanceSelection,
     ProviderConfig,
     ProviderInstanceConfig,
-    Strategy,
 )
 
 
@@ -49,18 +48,12 @@ class TestProviderConfig:
         assert instance.timeout == 15000
 
 
-class TestStrategy:
-    def test_supported_strategies(self):
-        assert Strategy.FAILOVER == "failover"
-        assert Strategy.ROUND_ROBIN == "round_robin"
-        assert Strategy.RANDOM == "random"
-        assert len(Strategy) == 3
+
 
 
 class TestExecutorConfig:
     def test_defaults(self):
         config = ExecutorConfig()
-        assert config.strategy == Strategy.ROUND_ROBIN
         assert config.health_check.failure_threshold == 3
         assert config.health_check.success_threshold == 2
         assert config.circuit_breaker.base_timeout == 3600
@@ -72,7 +65,6 @@ class TestExecutorConfig:
 
     def test_custom_values(self):
         config = ExecutorConfig(
-            strategy=Strategy.RANDOM,
             health_check=HealthCheckConfig(failure_threshold=5),
             circuit_breaker=CircuitBreakerConfig(
                 base_timeout=120,
@@ -83,7 +75,6 @@ class TestExecutorConfig:
             ),
             failover=FailoverConfig(max_attempts=5),
         )
-        assert config.strategy == Strategy.RANDOM
         assert config.health_check.failure_threshold == 5
         assert config.circuit_breaker.base_timeout == 120
         assert config.circuit_breaker.multiplier == 2.0
@@ -98,7 +89,6 @@ class TestGatewayConfig:
         config = GatewayConfig()
         assert config.server.port == 8100
         assert config.providers == {}
-        assert config.executor.strategy == Strategy.ROUND_ROBIN
 
     def test_missing_config_file_returns_default(self):
         config = GatewayConfig.load("/nonexistent/path/config.json")
@@ -131,7 +121,6 @@ class TestGatewayConfig:
         )
 
         config = GatewayConfig.load(str(config_file))
-        assert config.executor.strategy == Strategy.RANDOM
         assert config.providers["exa"].instances[0].url == "https://api.example.com"
 
     def test_rejects_unknown_root_fields(self, tmp_path):
