@@ -3,182 +3,218 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Search Gateway</title>
+<title>搜索网关</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f23; color: #e0e0e0; min-height: 100vh; }
-.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
-.subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
+:root {
+  --bg-0: #08090d; --bg-1: #0f1117; --bg-2: #171923; --bg-3: #1e2030;
+  --border: #2a2d3e; --border-hover: #3d4058;
+  --text-0: #f0f2f5; --text-1: #b0b4c0; --text-2: #6b7084;
+  --accent: #6c8cff; --accent-dim: rgba(108,140,255,0.12);
+  --green: #34d399; --green-dim: rgba(52,211,153,0.12);
+  --red: #f87171; --red-dim: rgba(248,113,113,0.12);
+  --amber: #fbbf24; --amber-dim: rgba(251,191,36,0.12);
+  --radius: 10px;
+}
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-0); color: var(--text-0); min-height: 100vh; }
+
+/* Top nav */
+.topbar { background: var(--bg-1); border-bottom: 1px solid var(--border); padding: 0 32px; display: flex; align-items: center; height: 56px; position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); }
+.topbar-logo { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+.topbar-logo span { color: var(--text-2); font-weight: 400; margin-left: 6px; font-size: 12px; }
+.topbar-status { margin-left: auto; display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--text-2); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.dead { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+.container { max-width: 1280px; margin: 0 auto; padding: 24px 32px; }
+
+/* Metric cards row */
+.metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+.metric-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; transition: border-color .2s; }
+.metric-card:hover { border-color: var(--border-hover); }
+.metric-label { font-size: 11px; font-weight: 500; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.metric-value { font-size: 26px; font-weight: 700; color: var(--text-0); line-height: 1; }
+.metric-value .unit { font-size: 13px; font-weight: 400; color: var(--text-2); margin-left: 2px; }
+.metric-sub { font-size: 11px; color: var(--text-2); margin-top: 4px; }
 
 /* Tabs */
-.tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 1px solid #333; }
-.tab { padding: 10px 20px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; transition: all .2s; }
-.tab:hover { color: #ccc; }
-.tab.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; }
+.tab { padding: 8px 18px; cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; border-radius: 6px; transition: all .2s; user-select: none; }
+.tab:hover { color: var(--text-1); background: var(--bg-2); }
+.tab.active { color: var(--accent); background: var(--accent-dim); }
 .panel { display: none; }
-.panel.active { display: block; }
+.panel.active { display: block; animation: fadeUp .25s ease; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* Cards */
-.card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.card-title { font-size: 15px; font-weight: 600; }
-.badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px; }
-.badge-healthy { background: #1a3a1a; color: #4caf50; }
-.badge-unhealthy { background: #3a1a1a; color: #f44336; }
-.badge-fallback { background: #2a2a1a; color: #ff9800; }
-.badge-free { background: #1a2a3a; color: #00d4ff; }
-.card-meta { color: #888; font-size: 12px; margin-top: 8px; }
-.card-meta span { margin-right: 16px; }
-.card-actions { display: flex; gap: 8px; margin-top: 12px; }
+/* Provider group */
+.group-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; transition: border-color .2s; }
+.group-card:hover { border-color: var(--border-hover); }
+.group-header { padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-2); }
+.group-left { display: flex; align-items: center; gap: 10px; }
+.group-name { font-size: 15px; font-weight: 600; }
+.group-badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+.group-badge.search { background: var(--accent-dim); color: var(--accent); }
+.group-badge.extract { background: var(--green-dim); color: var(--green); }
+.group-badge.research { background: var(--amber-dim); color: var(--amber); }
+.group-meta { font-size: 11px; color: var(--text-2); display: flex; gap: 14px; }
 
-/* Provider Group */
-.group-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; margin-bottom: 16px; }
-.group-header { padding: 16px; border-bottom: 1px solid #2a2a4a; display: flex; justify-content: space-between; align-items: center; }
-.group-title { font-size: 16px; font-weight: 600; color: #00d4ff; }
-.group-meta { color: #888; font-size: 12px; margin-top: 4px; }
-.instances { padding: 12px; }
-.instance-card { background: #0f0f23; border: 1px solid #2a2a4a; border-radius: 6px; padding: 12px; margin-bottom: 8px; }
-.instance-header { display: flex; justify-content: space-between; align-items: center; }
-.instance-name { font-size: 14px; font-weight: 500; }
+.instances { padding: 10px 14px; }
+.inst-row { display: grid; grid-template-columns: 200px 1fr 120px 120px 100px 80px; align-items: center; padding: 10px 12px; border-radius: 6px; font-size: 13px; transition: background .15s; }
+.inst-row:hover { background: var(--bg-2); }
+.inst-row-header { color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding-bottom: 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.inst-row-header:hover { background: transparent; }
+.inst-name { font-weight: 500; }
+.inst-caps { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Breaker state labels */
+.state { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; display: inline-block; }
+.state-closed { background: var(--green-dim); color: var(--green); }
+.state-open { background: var(--red-dim); color: var(--red); }
+.state-half { background: var(--amber-dim); color: var(--amber); }
 
 /* Buttons */
-.btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all .2s; }
-.btn-primary { background: #00d4ff; color: #000; }
-.btn-primary:hover { background: #00b8e6; }
-.btn-danger { background: #f44336; color: #fff; }
-.btn-danger:hover { background: #d32f2f; }
-.btn-outline { background: transparent; border: 1px solid #444; color: #ccc; }
-.btn-outline:hover { border-color: #00d4ff; color: #00d4ff; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn { padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; font-family: inherit; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #5a7aee; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-1); }
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: var(--red-dim); color: var(--red); }
+.btn-danger:hover { background: rgba(248,113,113,0.2); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
 
-/* Form */
-.form-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
-.form-overlay.active { display: flex; }
-.form-box { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 24px; width: 520px; max-height: 85vh; overflow-y: auto; }
-.form-box h3 { margin-bottom: 16px; color: #00d4ff; }
-.form-group { margin-bottom: 14px; }
-.form-group label { display: block; font-size: 13px; color: #aaa; margin-bottom: 4px; }
-.form-group input, .form-group select { width: 100%; padding: 8px 12px; background: #0f0f23; border: 1px solid #333; border-radius: 4px; color: #e0e0e0; font-size: 14px; }
-.form-group input:focus, .form-group select:focus { outline: none; border-color: #00d4ff; }
-.form-group small { color: #666; font-size: 11px; display: block; margin-top: 4px; }
-.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.form-note { background: #2a2a1a; border-left: 3px solid #ff9800; padding: 12px; margin-bottom: 16px; font-size: 12px; color: #ccc; border-radius: 4px; }
+/* Action bar */
+.action-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.action-bar .count { font-size: 12px; color: var(--text-2); }
+
+/* Settings */
+.settings-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 14px; font-weight: 500; }
+.setting-desc { font-size: 12px; color: var(--text-2); margin-top: 2px; }
 
 /* Toggle */
 .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .toggle input { display: none; }
 .toggle-slider { width: 36px; height: 20px; background: #333; border-radius: 10px; position: relative; transition: .2s; }
-.toggle-slider::after { content: ''; position: absolute; width: 16px; height: 16px; background: #888; border-radius: 50%; top: 2px; left: 2px; transition: .2s; }
-.toggle input:checked + .toggle-slider { background: #00d4ff; }
+.toggle-slider::after { content: ''; position: absolute; width: 16px; height: 16px; background: #777; border-radius: 50%; top: 2px; left: 2px; transition: .2s; }
+.toggle input:checked + .toggle-slider { background: var(--accent); }
 .toggle input:checked + .toggle-slider::after { left: 18px; background: #fff; }
 
-/* Settings */
-.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #222; }
-.setting-label { font-size: 14px; }
-.setting-desc { font-size: 12px; color: #666; margin-top: 2px; }
-
-/* Status bar */
-.status-bar { display: flex; gap: 16px; margin-bottom: 20px; padding: 10px 16px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: #888; flex-wrap: wrap; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-.dot-green { background: #4caf50; }
-.dot-red { background: #f44336; }
-
 /* History */
-.history-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; }
-.history-list-wrap, .history-detail { min-width: 0; }
-.history-item { width: 100%; text-align: left; background: #1a1a2e; }
-.history-item:hover { border-color: #3d6382; }
-.history-item.active { border-color: #00d4ff; background: #162535; box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.15) inset; }
-.history-item-title { font-size: 14px; font-weight: 600; color: #f3f7fb; margin-bottom: 6px; }
-.history-item-meta { color: #7f93a5; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
-.history-empty { text-align: center; color: #666; padding: 32px; }
-.history-detail-card { min-height: 360px; }
-.history-detail-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; }
-.history-detail-title { font-size: 18px; color: #f3f7fb; margin-bottom: 6px; }
-.history-detail-meta { color: #7f93a5; font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
-.history-result { background: #0f0f23; border: 1px solid #2a2a4a; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
-.history-result-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-.history-result-title a { color: #8cdcff; text-decoration: none; }
+.history-layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+.history-item { width: 100%; text-align: left; background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 6px; cursor: pointer; transition: all .15s; }
+.history-item:hover { border-color: var(--border-hover); }
+.history-item.active { border-color: var(--accent); background: var(--accent-dim); }
+.history-item-title { font-size: 13px; font-weight: 600; color: var(--text-0); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-item-meta { color: var(--text-2); font-size: 11px; display: flex; gap: 8px; flex-wrap: wrap; }
+.history-detail-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; min-height: 400px; }
+.history-detail-title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.history-detail-meta { color: var(--text-2); font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.history-result { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.history-result-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.history-result-title a { color: var(--accent); text-decoration: none; }
 .history-result-title a:hover { text-decoration: underline; }
-.history-result-url { color: #5cb97a; font-size: 12px; margin-bottom: 8px; word-break: break-all; }
-.history-result-content { color: #cbd3da; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
-.history-result-meta { color: #7f93a5; font-size: 12px; margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+.history-result-url { color: var(--green); font-size: 11px; margin-bottom: 6px; word-break: break-all; }
+.history-result-content { color: var(--text-1); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.history-result-meta { color: var(--text-2); font-size: 11px; margin-top: 8px; display: flex; gap: 10px; }
+.history-empty { text-align: center; color: var(--text-2); padding: 40px; }
 
-@media (max-width: 900px) {
-  .history-layout { grid-template-columns: 1fr; }
-  .history-detail-card { min-height: 0; }
-}
+/* Form overlay */
+.form-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 100; justify-content: center; align-items: center; }
+.form-overlay.active { display: flex; }
+.form-box { background: var(--bg-1); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 520px; max-height: 85vh; overflow-y: auto; }
+.form-box h3 { margin-bottom: 20px; font-size: 18px; font-weight: 600; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px; font-weight: 500; }
+.form-group input, .form-group select { width: 100%; padding: 9px 12px; background: var(--bg-0); border: 1px solid var(--border); border-radius: 6px; color: var(--text-0); font-size: 13px; font-family: inherit; transition: border-color .2s; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+.form-group small { color: var(--text-2); font-size: 11px; display: block; margin-top: 3px; }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.form-note { background: var(--amber-dim); border-left: 3px solid var(--amber); padding: 12px; margin-bottom: 16px; font-size: 12px; color: var(--text-1); border-radius: 6px; }
 
 /* Toast */
-.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: #2a2a4a; border-left: 3px solid #00d4ff; border-radius: 4px; font-size: 13px; z-index: 200; animation: fadeIn .3s; }
-.toast.error { border-left-color: #f44336; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
+.toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; z-index: 200; animation: slideUp .3s ease; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.toast.error { border-color: var(--red); }
+.toast.success { border-color: var(--green); }
+@keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; } }
 
-/* Info box */
-.info-box { background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; line-height: 1.6; }
-.info-box strong { color: #00d4ff; }
+@media (max-width: 900px) {
+  .metrics-row { grid-template-columns: repeat(2, 1fr); }
+  .history-layout { grid-template-columns: 1fr; }
+  .inst-row { grid-template-columns: 1fr 1fr; gap: 4px; }
+  .inst-row-header { display: none; }
+  .container { padding: 16px; }
+  .topbar { padding: 0 16px; }
+}
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>Search Gateway</h1>
-  <p class="subtitle">Provider Configuration & Management</p>
 
-  <div class="status-bar" id="statusBar">Loading...</div>
+<div class="topbar">
+  <div class="topbar-logo">Search Gateway <span id="version"></span></div>
+  <div class="topbar-status" id="statusBar">连接中...</div>
+</div>
+
+<div class="container">
+  <div class="metrics-row" id="metricsRow">
+    <div class="metric-card"><div class="metric-label">总请求数</div><div class="metric-value" id="mRequests">—</div></div>
+    <div class="metric-card"><div class="metric-label">成功率</div><div class="metric-value" id="mSuccessRate">—</div></div>
+    <div class="metric-card"><div class="metric-label">平均延迟</div><div class="metric-value" id="mLatency">—</div></div>
+    <div class="metric-card"><div class="metric-label">活跃供应商</div><div class="metric-value" id="mProviders">—</div></div>
+  </div>
 
   <div class="tabs">
-    <div class="tab active" onclick="showTab('providers')">Provider Groups</div>
-    <div class="tab" onclick="showTab('settings')">Settings</div>
-    <div class="tab" onclick="showTab('history')">History</div>
+    <div class="tab active" onclick="showTab('providers')">供应商</div>
+    <div class="tab" onclick="showTab('settings')">设置</div>
+    <div class="tab" onclick="showTab('history')">历史记录</div>
   </div>
 
   <!-- Providers Panel -->
   <div class="panel active" id="panel-providers">
-    <div class="info-box">
-      <strong>Two-Layer Architecture:</strong> Provider Groups are selected by <strong>priority</strong> (lower number = higher priority).
-      Within each group, instances are selected by the <strong>selection strategy</strong> (random/round_robin/priority) for load balancing.
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <span style="color:#888;font-size:13px;" id="providerCount"></span>
-      <button class="btn btn-primary" onclick="openAddInstanceForm()">+ Add Instance</button>
+    <div class="action-bar">
+      <span class="count" id="providerCount"></span>
+      <button class="btn btn-primary" onclick="openAddInstanceForm()">+ 添加实例</button>
     </div>
     <div id="providerList"></div>
   </div>
 
   <!-- Settings Panel -->
   <div class="panel" id="panel-settings">
-    <div class="card">
+    <div class="settings-card">
       <div class="setting-row">
         <div>
-          <div class="setting-label">Search History</div>
-          <div class="setting-desc">Record every search to filesystem</div>
+          <div class="setting-label">搜索历史</div>
+          <div class="setting-desc">将每次搜索记录保存到文件系统</div>
         </div>
         <label class="toggle">
           <input type="checkbox" id="settingHistory" onchange="saveSettings()">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="setting-row" style="border:none;">
+      <div class="setting-row">
         <div>
-          <div class="setting-label">Reload Config</div>
-          <div class="setting-desc">Apply changes and reinitialize providers</div>
+          <div class="setting-label">重载配置</div>
+          <div class="setting-desc">应用更改并重新初始化供应商</div>
         </div>
-        <button class="btn btn-outline" onclick="reloadConfig()">Reload</button>
+        <button class="btn btn-outline" onclick="reloadConfig()">重载</button>
       </div>
     </div>
   </div>
 
   <!-- History Panel -->
   <div class="panel" id="panel-history">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <span style="color:#888;font-size:13px;" id="historyCount"></span>
-      <button class="btn btn-danger" onclick="clearHistory()">Clear History</button>
+    <div class="action-bar">
+      <span class="count" id="historyCount"></span>
+      <button class="btn btn-danger" onclick="clearHistory()">清除历史</button>
     </div>
     <div class="history-layout">
-      <div class="history-list-wrap" id="historyList"></div>
-      <div class="history-detail" id="historyDetail">
-        <div class="card history-detail-card history-empty">Select a history entry to inspect results.</div>
+      <div id="historyList"></div>
+      <div id="historyDetail">
+        <div class="history-detail-card history-empty">选择一条记录查看详情</div>
       </div>
     </div>
   </div>
@@ -187,23 +223,23 @@ h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
 <!-- Add/Edit Instance Form -->
 <div class="form-overlay" id="formOverlay">
   <div class="form-box">
-    <h3 id="formTitle">Add Instance</h3>
+    <h3 id="formTitle">添加实例</h3>
     <div class="form-note" id="formNote"></div>
     <form onsubmit="return saveInstance(event)">
       <div class="form-group">
-        <label>Provider Group</label>
-        <input type="text" id="formGroup" placeholder="e.g. exa, tavily, youcom" required>
-        <small>Group name for organizing related instances</small>
+        <label>供应商组</label>
+        <input type="text" id="formGroup" placeholder="例如 exa, tavily, youcom" required>
+        <small>用于组织相关实例的组名</small>
       </div>
       <div class="form-group">
-        <label>Instance ID</label>
-        <input type="text" id="formInstanceId" placeholder="e.g. exa-1, tavily-1" required>
-        <small>Unique ID for this instance within the group</small>
+        <label>实例 ID</label>
+        <input type="text" id="formInstanceId" placeholder="例如 exa-1, tavily-1" required>
+        <small>该实例在组内的唯一标识</small>
       </div>
       <div class="form-group">
-        <label>Provider Type</label>
+        <label>供应商类型</label>
         <select id="formType" onchange="onTypeChange()" required>
-          <option value="">Select provider type...</option>
+          <option value="">选择供应商类型...</option>
         </select>
       </div>
       <div class="form-group" id="groupApiKey">
@@ -215,34 +251,35 @@ h1 { color: #00d4ff; font-size: 24px; margin-bottom: 4px; }
         <input type="text" id="formUrl" placeholder="http://localhost:8888">
       </div>
       <div class="form-group">
-        <label>Group Priority</label>
+        <label>组优先级</label>
         <input type="number" id="formGroupPriority" value="10" min="1" max="100">
-        <small>Lower = higher priority. Groups are tried in priority order.</small>
+        <small>数值越小优先级越高，按优先级顺序尝试</small>
       </div>
       <div class="form-group">
-        <label>Instance Priority</label>
+        <label>实例优先级</label>
         <input type="number" id="formInstancePriority" value="1" min="1" max="100">
-        <small>Used for priority-based selection within the group</small>
+        <small>组内按优先级选择实例时使用</small>
       </div>
       <div class="form-group">
-        <label>Selection Strategy</label>
+        <label>选择策略</label>
         <select id="formSelection">
-          <option value="random">Random (default)</option>
-          <option value="round_robin">Round Robin</option>
-          <option value="priority">Priority</option>
+          <option value="random">随机（默认）</option>
+          <option value="round_robin">轮询</option>
+          <option value="priority">优先级</option>
         </select>
-        <small>How to select instances within this group</small>
+        <small>组内实例的选择方式</small>
       </div>
       <div class="form-group">
-        <label class="toggle">
-          <input type="checkbox" id="formEnabled" checked>
-          <span class="toggle-slider"></span>
-          <span style="margin-left:8px;">Enabled</span>
-        </label>
+        <label>状态</label>
+        <select id="formEnabled">
+          <option value="true">启用</option>
+          <option value="false">禁用</option>
+        </select>
+        <small>禁用后该实例不会参与请求分发</small>
       </div>
       <div class="form-actions">
-        <button type="button" class="btn btn-outline" onclick="closeForm()">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-outline" onclick="closeForm()">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
       </div>
     </form>
   </div>
@@ -264,114 +301,158 @@ function showTab(name) {
   if (name === 'history') loadHistory();
 }
 
-function toast(msg, isError) {
+function toast(msg, type) {
   const t = document.createElement('div');
-  t.className = 'toast' + (isError ? ' error' : '');
+  t.className = 'toast' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 4000);
 }
 
+// === Status & Metrics ===
+
 async function loadStatus() {
   try {
     const resp = await fetch(API + '/status');
     const data = await resp.json();
-    const dot = data.running ? '<span class="dot dot-green"></span>' : '<span class="dot dot-red"></span>';
+    const dot = '<span class="status-dot ' + (data.running ? 'live' : 'dead') + '"></span>';
+    const available = data.providers.available || [];
     document.getElementById('statusBar').innerHTML =
-      dot + (data.running ? ' Running' : ' Stopped') +
-      '<span>Port: ' + data.port + '</span>' +
-      '<span>Providers: ' + data.providers.healthy + '/' + data.providers.total + '</span>';
+      dot + (data.running ? '运行中' : '已停止') +
+      '<span style="margin-left:16px;">端口 ' + data.port + '</span>' +
+      '<span>供应商 ' + available.length + '/' + data.providers.total + '</span>';
   } catch(e) {
-    document.getElementById('statusBar').innerHTML = '<span class="dot dot-red"></span> Cannot connect to gateway';
+    document.getElementById('statusBar').innerHTML = '<span class="status-dot dead"></span>无法连接';
   }
 }
 
+async function loadMetrics() {
+  try {
+    const resp = await fetch(API + '/metrics');
+    const metrics = await resp.json();
+    let totalReq = 0, totalSuccess = 0, totalLatency = 0, latencyCount = 0, activeCount = 0;
+    for (const [name, m] of Object.entries(metrics)) {
+      totalReq += m.requests;
+      totalSuccess += m.successes;
+      if (m.avg_latency_ms > 0) { totalLatency += m.avg_latency_ms; latencyCount++; }
+      if (m.circuit_breaker !== 'open') activeCount++;
+    }
+    const succRate = totalReq > 0 ? (totalSuccess / totalReq * 100) : 100;
+    const avgLat = latencyCount > 0 ? (totalLatency / latencyCount) : 0;
+
+    document.getElementById('mRequests').innerHTML = totalReq.toLocaleString();
+    document.getElementById('mSuccessRate').innerHTML = succRate.toFixed(1) + '<span class="unit">%</span>';
+    document.getElementById('mLatency').innerHTML = avgLat.toFixed(0) + '<span class="unit">ms</span>';
+    document.getElementById('mProviders').innerHTML = activeCount + '<span class="unit">/ ' + Object.keys(metrics).length + '</span>';
+  } catch(e) {}
+}
+
+// === Providers ===
+
 async function loadProviders() {
   try {
-    const [provResp, typesResp, configResp] = await Promise.all([
+    const [provResp, typesResp, configResp, metricsResp] = await Promise.all([
       fetch(API + '/providers'),
       fetch(API + '/api/provider-types'),
       fetch(API + '/api/config'),
+      fetch(API + '/metrics'),
     ]);
     const providers = await provResp.json();
     providerTypes = await typesResp.json();
     config = await configResp.json();
+    const metrics = await metricsResp.json();
 
-    // Group instances by provider group
+    // Group by actual group field
     const groups = {};
     providers.forEach(p => {
-      const groupName = p.name.split('-')[0]; // Extract group from instance name
-      if (!groups[groupName]) groups[groupName] = [];
-      groups[groupName].push(p);
+      const g = p.group || p.name.split('-')[0];
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(p);
+    });
+
+    // Sort groups by config priority
+    const sortedGroups = Object.entries(groups).sort(([a], [b]) => {
+      const pa = config.providers[a]?.priority || 99;
+      const pb = config.providers[b]?.priority || 99;
+      return pa - pb;
     });
 
     document.getElementById('providerCount').textContent =
-      Object.keys(groups).length + ' group(s), ' + providers.length + ' instance(s)';
+      sortedGroups.length + ' 个组，' + providers.length + ' 个实例';
 
     if (!providers.length) {
       document.getElementById('providerList').innerHTML =
-        '<div class="card" style="text-align:center;color:#666;padding:32px;">No instances configured. Click "+ Add Instance" to get started.</div>';
+        '<div class="history-empty">未配置实例，点击 "+ 添加实例" 开始配置</div>';
       return;
     }
 
-    // Render groups
-    const groupsHtml = Object.entries(groups).map(([groupName, instances]) => {
+    document.getElementById('providerList').innerHTML = sortedGroups.map(([groupName, instances]) => {
       const groupConfig = config.providers[groupName] || {};
-      const priority = groupConfig.priority || 10;
+      const priority = groupConfig.priority || '?';
       const selection = groupConfig.selection || 'random';
-      const enabled = groupConfig.enabled !== false;
+      const allCaps = [...new Set(instances.flatMap(i => i.capabilities || []))];
 
-      const instancesHtml = instances.map(inst => {
-        const badges = [];
-        badges.push(inst.healthy ? '<span class="badge badge-healthy">Healthy</span>' : '<span class="badge badge-unhealthy">Unhealthy</span>');
-        if (inst.is_fallback) badges.push('<span class="badge badge-fallback">Fallback</span>');
+      const capsHtml = allCaps.map(c => '<span class="group-badge ' + c + '">' + c + '</span>').join('');
 
-        return '<div class="instance-card">' +
-          '<div class="instance-header">' +
-            '<div>' +
-              '<span class="instance-name">' + esc(inst.name) + '</span>' +
-              badges.join('') +
-            '</div>' +
-            '<div style="display:flex;gap:6px;">' +
-              '<button class="btn btn-outline btn-sm" onclick="editInstance(\'' + esc(groupName) + '\', \'' + esc(inst.name) + '\')">Edit</button>' +
-              '<button class="btn btn-danger btn-sm" onclick="deleteInstance(\'' + esc(groupName) + '\', \'' + esc(inst.name) + '\')">Delete</button>' +
-            '</div>' +
-          '</div>' +
-          '<div class="card-meta">' +
-            '<span>Type: ' + esc(inst.type) + '</span>' +
-            '<span>Priority: ' + inst.priority + '</span>' +
-            '<span>Capabilities: ' + inst.capabilities.join(', ') + '</span>' +
+      const instHtml = '<div class="inst-row inst-row-header">' +
+        '<div>实例</div><div>能力</div><div>熔断器</div><div>延迟</div><div>请求</div><div></div>' +
+      '</div>' +
+      instances.map(inst => {
+        const m = metrics[inst.name] || {};
+        const breakerState = inst.circuit_breaker || 'closed';
+        const stateClass = breakerState === 'closed' ? 'state-closed' : breakerState === 'open' ? 'state-open' : 'state-half';
+        const stateLabel = breakerState === 'half_open' ? 'half-open' : breakerState;
+        const latency = m.avg_latency_ms ? m.avg_latency_ms.toFixed(0) + 'ms' : '—';
+        const requests = m.requests || 0;
+        const succRate = m.success_rate !== undefined ? m.success_rate.toFixed(0) + '%' : '';
+
+        const capsInst = (inst.capabilities || []).map(c =>
+          '<span class="group-badge ' + c + '">' + c + '</span>'
+        ).join('');
+
+        return '<div class="inst-row">' +
+          '<div class="inst-name">' + esc(inst.name) + '</div>' +
+          '<div class="inst-caps">' + capsInst + '</div>' +
+          '<div><span class="state ' + stateClass + '">' + stateLabel + '</span></div>' +
+          '<div style="color:var(--text-1);">' + latency + '</div>' +
+          '<div style="color:var(--text-1);">' + requests + (succRate ? ' <span style="color:var(--text-2);font-size:11px;">(' + succRate + ')</span>' : '') + '</div>' +
+          '<div style="display:flex;gap:4px;justify-content:flex-end;">' +
+            '<button class="btn btn-outline btn-sm" onclick="editInstance(\'' + esc(groupName) + '\', \'' + esc(inst.name) + '\')">编辑</button>' +
+            '<button class="btn btn-danger btn-sm" onclick="deleteInstance(\'' + esc(groupName) + '\', \'' + esc(inst.name) + '\')">删除</button>' +
           '</div>' +
         '</div>';
       }).join('');
 
+      const fallback = groupConfig.fallback_for?.length ? ' · fallback: ' + groupConfig.fallback_for.join(',') : '';
+
       return '<div class="group-card">' +
         '<div class="group-header">' +
-          '<div>' +
-            '<div class="group-title">' + esc(groupName) + (enabled ? '' : ' <span style="color:#888;font-size:12px;">(Disabled)</span>') + '</div>' +
-            '<div class="group-meta">' +
-              'Priority: ' + priority + ' | ' +
-              'Selection: ' + selection + ' | ' +
-              instances.length + ' instance(s)' +
-            '</div>' +
+          '<div class="group-left">' +
+            '<div class="group-name">' + esc(groupName) + '</div>' +
+            capsHtml +
+          '</div>' +
+          '<div class="group-meta">' +
+            '<span>P' + priority + '</span>' +
+            '<span>' + selection + '</span>' +
+            '<span>' + instances.length + ' inst' + fallback + '</span>' +
           '</div>' +
         '</div>' +
-        '<div class="instances">' + instancesHtml + '</div>' +
+        '<div class="instances">' + instHtml + '</div>' +
       '</div>';
     }).join('');
-
-    document.getElementById('providerList').innerHTML = groupsHtml;
   } catch(e) {
     document.getElementById('providerList').innerHTML =
-      '<div class="card" style="color:#f44336;">Failed to load providers: ' + e.message + '</div>';
+      '<div class="history-empty" style="color:var(--red);">加载失败: ' + e.message + '</div>';
   }
 }
+
+// === Form ===
 
 function openAddInstanceForm() {
   editingGroup = null;
   editingInstance = null;
-  document.getElementById('formTitle').textContent = 'Add Instance';
-  document.getElementById('formNote').textContent = 'Add a new instance to a provider group. If the group doesn\'t exist, it will be created.';
+  document.getElementById('formTitle').textContent = '添加实例';
+  document.getElementById('formNote').textContent = '添加新实例到供应商组。如果组不存在，将自动创建。';
   document.getElementById('formGroup').value = '';
   document.getElementById('formGroup').disabled = false;
   document.getElementById('formInstanceId').value = '';
@@ -382,10 +463,9 @@ function openAddInstanceForm() {
   document.getElementById('formGroupPriority').value = '10';
   document.getElementById('formInstancePriority').value = '1';
   document.getElementById('formSelection').value = 'random';
-  document.getElementById('formEnabled').checked = true;
-
+  document.getElementById('formEnabled').value = 'true';
   const sel = document.getElementById('formType');
-  sel.innerHTML = '<option value="">Select provider type...</option>';
+  sel.innerHTML = '<option value="">选择供应商类型...</option>';
   providerTypes.forEach(t => {
     sel.innerHTML += '<option value="' + t.type + '">' + t.name + ' (' + t.type + ')</option>';
   });
@@ -395,57 +475,39 @@ function openAddInstanceForm() {
 
 async function editInstance(groupName, instanceId) {
   try {
-    if (!config) {
-      const resp = await fetch(API + '/api/config');
-      config = await resp.json();
-    }
-
+    if (!config) { config = await (await fetch(API + '/api/config')).json(); }
     const groupConfig = config.providers[groupName];
-    if (!groupConfig) {
-      toast('Group not found: ' + groupName, true);
-      return;
-    }
-
+    if (!groupConfig) { toast('未找到组', 'error'); return; }
     const instance = groupConfig.instances.find(i => i.id === instanceId);
-    if (!instance) {
-      toast('Instance not found: ' + instanceId, true);
-      return;
-    }
+    if (!instance) { toast('未找到实例', 'error'); return; }
 
     editingGroup = groupName;
     editingInstance = instanceId;
-
-    document.getElementById('formTitle').textContent = 'Edit Instance';
-    document.getElementById('formNote').textContent = 'Editing instance: ' + instanceId + ' in group: ' + groupName;
+    document.getElementById('formTitle').textContent = '编辑实例';
+    document.getElementById('formNote').textContent = '编辑 ' + groupName + ' 组的 ' + instanceId;
     document.getElementById('formGroup').value = groupName;
     document.getElementById('formGroup').disabled = true;
     document.getElementById('formInstanceId').value = instanceId;
     document.getElementById('formInstanceId').disabled = true;
 
     const sel = document.getElementById('formType');
-    sel.innerHTML = '<option value="">Select provider type...</option>';
+    sel.innerHTML = '<option value="">选择供应商类型...</option>';
     providerTypes.forEach(t => {
       sel.innerHTML += '<option value="' + t.type + '">' + t.name + ' (' + t.type + ')</option>';
     });
     sel.value = groupConfig.type || '';
-
     document.getElementById('formApiKey').value = instance.api_key || '';
     document.getElementById('formUrl').value = instance.url || '';
     document.getElementById('formGroupPriority').value = groupConfig.priority || 10;
     document.getElementById('formInstancePriority').value = instance.priority || 1;
     document.getElementById('formSelection').value = groupConfig.selection || 'random';
-    document.getElementById('formEnabled').checked = instance.enabled !== false;
-
+    document.getElementById('formEnabled').value = instance.enabled !== false ? 'true' : 'false';
     onTypeChange();
     document.getElementById('formOverlay').classList.add('active');
-  } catch(e) {
-    toast('Error loading instance: ' + e.message, true);
-  }
+  } catch(e) { toast('错误: ' + e.message, 'error'); }
 }
 
-function closeForm() {
-  document.getElementById('formOverlay').classList.remove('active');
-}
+function closeForm() { document.getElementById('formOverlay').classList.remove('active'); }
 
 function onTypeChange() {
   const type = document.getElementById('formType').value;
@@ -456,80 +518,58 @@ function onTypeChange() {
 
 async function saveInstance(e) {
   e.preventDefault();
-
   const groupName = document.getElementById('formGroup').value.trim();
   const instanceId = document.getElementById('formInstanceId').value.trim();
   const type = document.getElementById('formType').value;
-
-  if (!groupName || !instanceId || !type) {
-    toast('Group, Instance ID, and Type are required', true);
-    return false;
-  }
+  if (!groupName || !instanceId || !type) { toast('请填写所有必填字段', 'error'); return false; }
 
   const instanceData = {
     id: instanceId,
-    enabled: document.getElementById('formEnabled').checked,
+    enabled: document.getElementById('formEnabled').value === 'true',
     priority: parseInt(document.getElementById('formInstancePriority').value) || 1,
   };
-
   const apiKey = document.getElementById('formApiKey').value.trim();
   if (apiKey) instanceData.api_key = apiKey;
-
   const url = document.getElementById('formUrl').value.trim();
   if (url) instanceData.url = url;
 
   try {
-    // First, ensure the group exists with correct settings
     const groupData = {
-      type: type,
-      enabled: true,
+      type, enabled: true,
       priority: parseInt(document.getElementById('formGroupPriority').value) || 10,
       selection: document.getElementById('formSelection').value || 'random',
       defaults: { timeout: 30000 },
     };
+    if (type === 'duckduckgo') groupData.fallback_for = ['search'];
 
-    if (type === 'duckduckgo') {
-      groupData.fallback_for = ['search'];
-    }
-
-    // Update/create group
     let resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(groupName), {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(groupData),
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(groupData),
     });
     if (!resp.ok) throw new Error(await resp.text());
 
-    // Update/create instance
     resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(groupName) + '/instances/' + encodeURIComponent(instanceId), {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(instanceData),
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(instanceData),
     });
     if (!resp.ok) throw new Error(await resp.text());
 
-    toast('Instance saved. Click "Reload" in Settings to apply changes.');
+    toast('已保存，请重载配置以应用更改', 'success');
     closeForm();
     loadProviders();
-  } catch(e) {
-    toast('Error: ' + e.message, true);
-  }
+  } catch(e) { toast('错误: ' + e.message, 'error'); }
   return false;
 }
 
 async function deleteInstance(groupName, instanceId) {
-  if (!confirm('Delete instance "' + instanceId + '" from group "' + groupName + '"?')) return;
+  if (!confirm('确定删除 ' + instanceId + ' ？')) return;
   try {
-    const resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(groupName) + '/instances/' + encodeURIComponent(instanceId), {
-      method: 'DELETE'
-    });
+    const resp = await fetch(API + '/api/config/providers/' + encodeURIComponent(groupName) + '/instances/' + encodeURIComponent(instanceId), { method: 'DELETE' });
     if (!resp.ok) throw new Error(await resp.text());
-    toast('Instance deleted. Click "Reload" in Settings to apply.');
+    toast('已删除，请重载配置以应用', 'success');
     loadProviders();
-  } catch(e) {
-    toast('Error: ' + e.message, true);
-  }
+  } catch(e) { toast('错误: ' + e.message, 'error'); }
 }
+
+// === Settings ===
 
 async function loadSettings() {
   try {
@@ -542,175 +582,137 @@ async function loadSettings() {
 async function saveSettings() {
   try {
     await fetch(API + '/api/config/settings', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        history_enabled: document.getElementById('settingHistory').checked,
-      }),
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ history_enabled: document.getElementById('settingHistory').checked }),
     });
-    toast('Settings saved. Click "Reload" to apply.');
-  } catch(e) {
-    toast('Error saving settings', true);
-  }
+    toast('设置已保存，请重载以应用', 'success');
+  } catch(e) { toast('操作失败', 'error'); }
 }
 
 async function reloadConfig() {
   try {
     const resp = await fetch(API + '/api/config/reload', { method: 'POST' });
     if (!resp.ok) throw new Error(await resp.text());
-    toast('Configuration reloaded successfully!');
-    setTimeout(() => { loadStatus(); loadProviders(); }, 500);
-  } catch(e) {
-    toast('Reload failed: ' + e.message, true);
-  }
+    toast('配置已重载！', 'success');
+    setTimeout(() => { loadStatus(); loadProviders(); loadMetrics(); }, 500);
+  } catch(e) { toast('重载失败: ' + e.message, 'error'); }
 }
+
+// === History ===
 
 async function loadHistory() {
   try {
     const resp = await fetch(API + '/api/history?limit=50');
     if (!resp.ok) throw new Error(await resp.text());
     const entries = await resp.json();
-    document.getElementById('historyCount').textContent = entries.length + ' recent search(es)';
+    document.getElementById('historyCount').textContent = entries.length + ' 条记录';
 
     if (!entries.length) {
-      document.getElementById('historyList').innerHTML =
-        '<div class="card history-empty">No search history yet.</div>';
-      document.getElementById('historyDetail').innerHTML =
-        '<div class="card history-detail-card history-empty">Run a search first, then open the History tab.</div>';
+      document.getElementById('historyList').innerHTML = '<div class="history-empty">暂无历史记录</div>';
+      document.getElementById('historyDetail').innerHTML = '<div class="history-detail-card history-empty">先进行一次搜索</div>';
       selectedHistoryId = null;
       return;
     }
-
     if (!selectedHistoryId || !entries.some(e => e.id === selectedHistoryId)) {
       selectedHistoryId = entries[0].id;
     }
 
     document.getElementById('historyList').innerHTML = entries.map(e => {
-      const activeClass = e.id === selectedHistoryId ? ' active' : '';
-      return '<button type="button" class="card history-item' + activeClass + '" data-entry-id="' + esc(e.id) + '">' +
+      const cls = e.id === selectedHistoryId ? ' active' : '';
+      return '<button type="button" class="history-item' + cls + '" data-id="' + esc(e.id) + '">' +
         '<div class="history-item-title">' + esc(e.query) + '</div>' +
         '<div class="history-item-meta">' +
           '<span>' + esc(e.provider) + '</span>' +
           '<span>' + e.total + ' results</span>' +
-          '<span>' + formatLatency(e.latency_ms) + '</span>' +
-          '<span>' + formatTimestamp(e.timestamp) + '</span>' +
+          '<span>' + fmtLatency(e.latency_ms) + '</span>' +
+          '<span>' + fmtTime(e.timestamp) + '</span>' +
         '</div>' +
       '</button>';
     }).join('');
 
     document.querySelectorAll('.history-item').forEach(el => {
-      el.addEventListener('click', () => openHistory(el.dataset.entryId));
+      el.addEventListener('click', () => openHistory(el.dataset.id));
     });
-
     await openHistory(selectedHistoryId, false);
   } catch(e) {
-    document.getElementById('historyList').innerHTML =
-      '<div class="card" style="color:#f44336;">Failed to load history.</div>';
-    document.getElementById('historyDetail').innerHTML =
-      '<div class="card history-detail-card history-empty" style="color:#f44336;">Failed to load history details.</div>';
+    document.getElementById('historyList').innerHTML = '<div class="history-empty" style="color:var(--red);">加载失败</div>';
   }
 }
 
-async function openHistory(entryId, refreshSelection = true) {
-  if (!entryId) return;
-  selectedHistoryId = entryId;
-
-  if (refreshSelection) {
+async function openHistory(id, refresh = true) {
+  if (!id) return;
+  selectedHistoryId = id;
+  if (refresh) {
     document.querySelectorAll('.history-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.entryId === entryId);
+      el.classList.toggle('active', el.dataset.id === id);
     });
   }
-
-  const detailEl = document.getElementById('historyDetail');
-  detailEl.innerHTML = '<div class="card history-detail-card history-empty">Loading history entry...</div>';
-
+  const el = document.getElementById('historyDetail');
+  el.innerHTML = '<div class="history-detail-card history-empty">加载中...</div>';
   try {
-    const resp = await fetch(API + '/api/history/' + encodeURIComponent(entryId));
+    const resp = await fetch(API + '/api/history/' + encodeURIComponent(id));
     if (!resp.ok) throw new Error(await resp.text());
     const entry = await resp.json();
     const results = Array.isArray(entry.results) ? entry.results : [];
 
-    detailEl.innerHTML = '<div class="card history-detail-card">' +
-      '<div class="history-detail-header">' +
-        '<div>' +
-          '<div class="history-detail-title">' + esc(entry.query) + '</div>' +
-          '<div class="history-detail-meta">' +
-            '<span>ID: ' + esc(entry.id) + '</span>' +
-            '<span>Provider: ' + esc(entry.provider) + '</span>' +
-            '<span>Results: ' + entry.total + '</span>' +
-            '<span>Latency: ' + formatLatency(entry.latency_ms) + '</span>' +
-            '<span>Time: ' + formatTimestamp(entry.timestamp) + '</span>' +
-          '</div>' +
-        '</div>' +
+    el.innerHTML = '<div class="history-detail-card">' +
+      '<div class="history-detail-title">' + esc(entry.query) + '</div>' +
+      '<div class="history-detail-meta">' +
+        '<span>Provider: ' + esc(entry.provider) + '</span>' +
+        '<span>Results: ' + entry.total + '</span>' +
+        '<span>Latency: ' + fmtLatency(entry.latency_ms) + '</span>' +
+        '<span>' + fmtTime(entry.timestamp) + '</span>' +
       '</div>' +
-      (results.length ? results.map((result, index) => renderHistoryResult(result, index)).join('') :
-        '<div class="history-empty" style="padding:24px 0;">This history entry has no stored results.</div>') +
+      (results.length ? results.map((r, i) => renderResult(r, i)).join('') :
+        '<div class="history-empty">无存储结果</div>') +
     '</div>';
   } catch(e) {
-    detailEl.innerHTML =
-      '<div class="card history-detail-card history-empty" style="color:#f44336;">Failed to load this history entry.</div>';
+    el.innerHTML = '<div class="history-detail-card history-empty" style="color:var(--red);">加载失败</div>';
   }
 }
 
 async function clearHistory() {
-  if (!confirm('Clear all search history?')) return;
+  if (!confirm('确定清除所有历史记录？')) return;
   try {
     const resp = await fetch(API + '/api/history', { method: 'DELETE' });
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
-    toast('Cleared ' + data.deleted + ' entries');
+    toast('已清除 ' + data.deleted + ' 条记录', 'success');
     selectedHistoryId = null;
     loadHistory();
-  } catch(e) {
-    toast('Error clearing history', true);
-  }
+  } catch(e) { toast('操作失败', 'error'); }
 }
 
-function renderHistoryResult(result, index) {
-  const content = truncateText(result.content || result.snippet || '', 900);
-  const title = result.title || 'Untitled result';
-  const url = result.url || '';
+function renderResult(r, i) {
+  const content = truncate(r.content || r.snippet || '', 900);
+  const title = r.title || '无标题';
+  const url = r.url || '';
   const meta = [];
-  if (result.source) meta.push('<span>Source: ' + esc(result.source) + '</span>');
-  if (result.score) meta.push('<span>Score: ' + result.score + '</span>');
-  if (result.published_date) meta.push('<span>Published: ' + esc(result.published_date) + '</span>');
+  if (r.source) meta.push('<span>Source: ' + esc(r.source) + '</span>');
+  if (r.score) meta.push('<span>Score: ' + r.score + '</span>');
 
   return '<div class="history-result">' +
     '<div class="history-result-title">' + (url ?
-      '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + (index + 1) + '. ' + esc(title) + '</a>' :
-      (index + 1) + '. ' + esc(title)) + '</div>' +
+      '<a href="' + esc(url) + '" target="_blank">' + (i + 1) + '. ' + esc(title) + '</a>' :
+      (i + 1) + '. ' + esc(title)) + '</div>' +
     (url ? '<div class="history-result-url">' + esc(url) + '</div>' : '') +
-    '<div class="history-result-content">' + (content ? esc(content) : '<span style="color:#666;">No preview content.</span>') + '</div>' +
+    '<div class="history-result-content">' + (content ? esc(content) : '<span style="color:var(--text-2);">无预览</span>') + '</div>' +
     (meta.length ? '<div class="history-result-meta">' + meta.join('') + '</div>' : '') +
   '</div>';
 }
 
-function formatTimestamp(ts) {
-  if (!ts) return 'Unknown time';
-  return ts.slice(0, 19).replace('T', ' ');
-}
+// === Utils ===
+function fmtTime(ts) { return ts ? ts.slice(0, 19).replace('T', ' ') : '—'; }
+function fmtLatency(l) { return typeof l === 'number' && !isNaN(l) ? l.toFixed(0) + 'ms' : '—'; }
+function truncate(t, n) { return !t || t.length <= n ? t : t.slice(0, n) + '...'; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-function formatLatency(latency) {
-  if (typeof latency !== 'number' || Number.isNaN(latency)) return 'N/A';
-  return latency.toFixed(0) + 'ms';
-}
-
-function truncateText(text, maxLength) {
-  if (!text || text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + '...';
-}
-
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-// Init
+// === Init ===
 loadStatus();
+loadMetrics();
 loadProviders();
 loadSettings();
-setInterval(loadStatus, 15000);
+setInterval(() => { loadStatus(); loadMetrics(); }, 10000);
 </script>
 </body>
 </html>
