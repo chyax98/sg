@@ -6,7 +6,12 @@ import pytest
 
 from sg.core.executor import Executor
 
-from sg.models.search import SearchResponse
+from sg.models.search import (
+    ExtractResponse,
+    ExtractResult,
+    ResearchResponse,
+    SearchResponse,
+)
 from sg.providers.registry import ProviderRegistry
 from sg.server.gateway import Gateway
 
@@ -117,13 +122,53 @@ class TestGatewayExtract:
         config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19020)
+        mock_response = ExtractResponse(
+            results=[
+                ExtractResult(url="https://example.com", content="extracted", title="Example"),
+            ],
+            provider="exa",
+            latency_ms=100.0,
+        )
         gateway.executor = MagicMock(spec=Executor)
-        gateway.executor.execute = AsyncMock(return_value="extract_result")
+        gateway.executor.execute = AsyncMock(return_value=mock_response)
+        gateway.executor.available_group_count = MagicMock(return_value=1)
+        gateway.history = MagicMock()
+        gateway.history.record_extract = AsyncMock(return_value=[
+            {"url": "https://example.com", "title": "Example", "file": "/tmp/x.txt", "chars": 9, "lines": 1},
+        ])
 
-        await gateway.extract(["https://example.com"])
+        result = await gateway.extract(["https://example.com"])
 
         gateway.executor.execute.assert_called_once()
         assert gateway.executor.execute.call_args[0][0] == "extract"
+        gateway.history.record_extract.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_extract_stores_result_files_on_response(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19021)
+        mock_response = ExtractResponse(
+            results=[
+                ExtractResult(url="https://a.com", content="A content", title="A"),
+            ],
+            provider="jina",
+            latency_ms=50.0,
+        )
+        expected_manifest = [
+            {"url": "https://a.com", "title": "A", "file": "/tmp/a.txt", "chars": 9, "lines": 1},
+        ]
+        gateway.executor = MagicMock(spec=Executor)
+        gateway.executor.execute = AsyncMock(return_value=mock_response)
+        gateway.executor.available_group_count = MagicMock(return_value=1)
+        gateway.history = MagicMock()
+        gateway.history.record_extract = AsyncMock(return_value=expected_manifest)
+
+        result = await gateway.extract(["https://a.com"])
+
+        assert result.result_files == expected_manifest
+        assert result.result_files[0]["url"] == "https://a.com"
 
 
 class TestGatewayResearch:
@@ -133,13 +178,23 @@ class TestGatewayResearch:
         config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19030)
+        mock_response = ResearchResponse(
+            topic="AI trends",
+            content="Research content here",
+            sources=["https://src.com"],
+            provider="tavily",
+            latency_ms=2000.0,
+        )
         gateway.executor = MagicMock(spec=Executor)
-        gateway.executor.execute = AsyncMock(return_value="research_result")
+        gateway.executor.execute = AsyncMock(return_value=mock_response)
+        gateway.history = MagicMock()
+        gateway.history.record_content = AsyncMock(return_value="/tmp/research.txt")
 
-        await gateway.research("AI trends")
+        result = await gateway.research("AI trends")
 
         gateway.executor.execute.assert_called_once()
         assert gateway.executor.execute.call_args[0][0] == "research"
+        assert result.topic == "AI trends"
 
 
 class TestGatewayStatus:

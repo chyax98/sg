@@ -36,10 +36,6 @@ def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
     if total > max_preview:
         lines.append(f"  ... ({total - max_preview} more)")
 
-    lines.append("")
-    lines.append("To read specific results, read file lines:")
-    lines.append("  Line 1 = result [1], Line 2 = result [2], etc.")
-
     return "\n".join(lines)
 
 
@@ -134,9 +130,7 @@ class MCPServer:
                   1,Python Asyncio Docs,https://docs.python.org/3/library/asyncio.html,0.95
                   2,...
 
-            Next steps:
-            - Read the view file for full results
-            - Each result has [N] marker for easy navigation
+            Read the returned file for full result details (JSONL, one result per line).
             """
             result = await self._call_gateway(
                 "/search",
@@ -195,19 +189,31 @@ class MCPServer:
             )
 
             lines = []
-            result_file = result.get("result_file")
-            if result_file:
-                lines.append(f"Hint: 提取的内容已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 结果！\n")
-            
-            for r in result.get("results", []):
-                lines.append(f"URL: {r.get('url', '')}")
-                if r.get("title"):
-                    lines.append(f"Title: {r['title']}")
-                if r.get("error"):
-                    lines.append(f"Status: Error - {r['error']}")
-                else:
-                    lines.append("Status: Success")
-                lines.append("")
+
+            # Use per-URL file manifest if available
+            result_files = result.get("result_files")
+            if result_files:
+                for f in result_files:
+                    if f.get("error"):
+                        lines.append(f"error: {f['error']} | {f.get('url', '')}")
+                    else:
+                        title = f.get('title') or ''
+                        lines.append(
+                            f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
+                        )
+                        lines.append(f"  {f.get('url', '')}")
+            else:
+                # Fallback: old format
+                result_file = result.get("result_file")
+                if result_file:
+                    lines.append(f"file: {result_file}")
+                for r in result.get("results", []):
+                    if r.get("error"):
+                        lines.append(f"error: {r['error']} | {r.get('url', '')}")
+                    else:
+                        lines.append(f"URL: {r.get('url', '')}")
+                        lines.append(f"Title: {r.get('title', '')}")
+
             return "\n".join(lines)
 
         @self.mcp.tool()
@@ -236,9 +242,9 @@ class MCPServer:
 
             Returns:
                 A file path containing the research report.
-                You MUST read the returned file path to access the full report, as it is not 
-                returned directly to save context space. The file contains a single JSON line 
-                with the full report in the `content` field.
+                You MUST read the returned file path to access the full report, 
+                as it is not returned directly to save context space.
+                The file contains line-wrapped plain text.
 
             Note: This operation may take longer than simple search (10-30 seconds depending on depth).
             """
@@ -250,15 +256,11 @@ class MCPServer:
                 },
             )
 
-            lines = []
-            result_file = result.get("result_file")
-            if result_file:
-                lines.append(f"Hint: 深度研究报告已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 报告！\n")
-            
+            result_file = result.get("result_file", "")
             content = result.get("content", "")
-            lines.append("Preview:")
-            lines.append(content[:1000] + ("\n...(truncated)..." if len(content) > 1000 else ""))
-            return "\n".join(lines)
+            total_lines = content.count("\n") + 1 if content else 0
+
+            return f"file:{result_file}\ntopic: {result.get('topic', topic)}\n{len(content)}c {total_lines}L"
 
         @self.mcp.tool()
         async def list_providers() -> str:

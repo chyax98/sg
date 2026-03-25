@@ -1,5 +1,6 @@
 """Tests for Executor."""
 
+import asyncio
 from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock
 
@@ -499,3 +500,150 @@ class TestHealthChecks:
         registry = _make_registry({})
         executor = Executor(_make_config(), registry)
         assert executor.get_breaker_state("new-provider") == CircuitBreaker.CLOSED
+
+
+class TestAvailableGroupCount:
+    def test_matches_real_candidate_count(self):
+        """Should match the actual number of groups that would be tried."""
+        registry = _make_registry(
+            {
+                "exa": [FakeProvider(name="exa-1")],
+                "brave": [FakeProvider(name="brave-1")],
+                "tavily": [FakeProvider(name="tavily-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        count = executor.available_group_count("search")
+        groups = executor._candidate_groups("search")
+
+        assert count == len(groups) == 3
+
+    def test_zero_means_no_providers(self):
+        registry = _make_registry({})
+        executor = Executor(_make_config(), registry)
+        assert executor.available_group_count("search") == 0
+
+
+class TestSpreadIndex:
+    """Simulates search_batch behavior: multiple queries, each with a different spread_index,
+    should distribute load across providers instead of all hitting the same one."""
+
+    @pytest.mark.asyncio
+    async def test_batch_queries_hit_different_providers(self):
+        """Real scenario: search_batch sends 3 queries with spread_index 0,1,2.
+        Each query's FIRST attempt should go to a different provider."""
+        attempted_providers: dict[int, str] = {}
+
+        registry = _make_registry(
+            {
+                "exa": [FakeProvider(name="exa-1")],
+                "brave": [FakeProvider(name="brave-1")],
+                "tavily": [FakeProvider(name="tavily-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        for idx in range(3):
+            async def op(provider, _idx=idx):
+                attempted_providers[_idx] = provider.name
+                return await provider.search(SearchRequest(query=f"query-{_idx}"))
+
+            await executor.execute("search", op, spread_index=idx)
+
+        # All 3 queries should have started with different providers
+        providers_used = set(attempted_providers.values())
+        assert len(providers_used) == 3, (
+            f"Expected 3 different starting providers, got: {attempted_providers}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_spread_preserves_failover_chain(self):
+        """Even with spread, if the rotated first-choice fails,
+        the query should still succeed via failover to the next group."""
+        attempt_log = []
+
+        registry = _make_registry(
+            {
+                "exa": [FakeProvider(name="exa-1", should_fail=True)],
+                "brave": [FakeProvider(name="brave-1")],
+                "tavily": [FakeProvider(name="tavily-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        async def op(provider):
+            attempt_log.append(provider.name)
+            return await provider.search(SearchRequest(query="test"))
+
+        # spread_index=0 → rotated order starts with exa (which fails)
+        result = await executor.execute("search", op, spread_index=0)
+
+        # Should have tried exa-1 (failed), then succeeded on another
+        assert "exa-1" in attempt_log
+        assert result.provider != "exa-1"
+        assert len(attempt_log) >= 2  # at least 2 attempts
+
+    @pytest.mark.asyncio
+    async def test_spread_with_concurrent_queries_distributes_metrics(self):
+        """Simulate what gateway.search_batch does: fire N queries concurrently
+        with different spread_index values, check metrics show distribution."""
+        registry = _make_registry(
+            {
+                "exa": [FakeProvider(name="exa-1")],
+                "brave": [FakeProvider(name="brave-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        async def do_query(idx):
+            async def op(provider):
+                return await provider.search(SearchRequest(query=f"q{idx}"))
+            return await executor.execute("search", op, spread_index=idx)
+
+        # Fire 4 queries: idx 0,1,2,3 → with 2 groups, should alternate
+        results = await asyncio.gather(*[do_query(i) for i in range(4)])
+
+        # With 2 groups and spread_index 0,1,2,3:
+        # idx=0 → offset=0 → starts at group 0 (exa)
+        # idx=1 → offset=1 → starts at group 1 (brave)
+        # idx=2 → offset=0 → starts at group 0 (exa)
+        # idx=3 → offset=1 → starts at group 1 (brave)
+        providers = [r.provider for r in results]
+        # Should be roughly evenly distributed
+        exa_count = providers.count("exa-1")
+        brave_count = providers.count("brave-1")
+        assert exa_count == 2 and brave_count == 2, (
+            f"Expected even distribution (2/2), got exa={exa_count}, brave={brave_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_spread_index_ignored_when_provider_specified(self):
+        """When user explicitly picks a provider, spread_index must be ignored."""
+        registry = _make_registry(
+            {
+                "exa": [FakeProvider(name="exa-1")],
+                "brave": [FakeProvider(name="brave-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        async def op(provider):
+            return await provider.search(SearchRequest(query="test"))
+
+        # Even with spread_index=1, explicit provider="exa" should force exa
+        result = await executor.execute("search", op, provider="exa", spread_index=1)
+        assert result.provider == "exa-1"
+
+    @pytest.mark.asyncio
+    async def test_spread_index_single_group_always_same(self):
+        """With only 1 group, spread_index is meaningless — should always use that group."""
+        registry = _make_registry({"exa": [FakeProvider(name="exa-1")]})
+        executor = Executor(_make_config(), registry)
+
+        async def op(provider):
+            return await provider.search(SearchRequest(query="test"))
+
+        for idx in range(5):
+            result = await executor.execute("search", op, spread_index=idx)
+            assert result.provider == "exa-1"

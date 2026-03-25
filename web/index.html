@@ -617,13 +617,20 @@ async function loadHistory() {
       selectedHistoryId = entries[0].id;
     }
 
+    const opLabels = {search: '搜索', extract: '提取', research: '研究'};
     document.getElementById('historyList').innerHTML = entries.map(e => {
       const cls = e.id === selectedHistoryId ? ' active' : '';
+      const op = e.operation || 'search';
+      const opLabel = opLabels[op] || op;
+      const opColor = op === 'extract' ? 'var(--green)' : op === 'research' ? 'var(--purple, #b48ead)' : 'var(--accent)';
       return '<button type="button" class="history-item' + cls + '" data-id="' + esc(e.id) + '">' +
-        '<div class="history-item-title">' + esc(e.query) + '</div>' +
+        '<div class="history-item-title">' +
+          '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:' + opColor + ';color:#fff;margin-right:6px;vertical-align:1px;">' + opLabel + '</span>' +
+          esc(e.query) +
+        '</div>' +
         '<div class="history-item-meta">' +
           '<span>' + esc(e.provider) + '</span>' +
-          '<span>' + e.total + ' results</span>' +
+          '<span>' + e.total + (op === 'extract' ? ' URLs' : ' results') + '</span>' +
           '<span>' + fmtLatency(e.latency_ms) + '</span>' +
           '<span>' + fmtTime(e.timestamp) + '</span>' +
         '</div>' +
@@ -653,18 +660,42 @@ async function openHistory(id, refresh = true) {
     const resp = await fetch(API + '/api/history/' + encodeURIComponent(id));
     if (!resp.ok) throw new Error(await resp.text());
     const entry = await resp.json();
-    const results = Array.isArray(entry.results) ? entry.results : [];
+    const op = entry.operation || 'search';
+
+    let bodyHtml;
+    if (op === 'extract' && Array.isArray(entry.files) && entry.files.length) {
+      // Extract: render file manifest
+      bodyHtml = entry.files.map((f, i) => {
+        const hasError = !!f.error;
+        const statusColor = hasError ? 'var(--red)' : 'var(--green)';
+        const statusText = hasError ? '失败: ' + esc(f.error) : f.chars.toLocaleString() + ' 字符, ' + f.lines + ' 行';
+        return '<div class="history-result">' +
+          '<div class="history-result-title">' +
+            '<a href="' + esc(f.url) + '" target="_blank">' + (i + 1) + '. ' + esc(f.title || f.url) + '</a>' +
+          '</div>' +
+          '<div class="history-result-url">' + esc(f.url) + '</div>' +
+          '<div style="font-size:12px;margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;">' +
+            '<span style="color:' + statusColor + ';">' + statusText + '</span>' +
+            (f.file ? '<span style="color:var(--text-2);">文件: <code style="font-size:11px;background:var(--bg-2);padding:2px 6px;border-radius:3px;">' + esc(f.file) + '</code></span>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      // Search / research: render results
+      const results = Array.isArray(entry.results) ? entry.results : [];
+      bodyHtml = results.length ? results.map((r, i) => renderResult(r, i)).join('') :
+        '<div class="history-empty">无存储结果</div>';
+    }
 
     el.innerHTML = '<div class="history-detail-card">' +
       '<div class="history-detail-title">' + esc(entry.query) + '</div>' +
       '<div class="history-detail-meta">' +
         '<span>Provider: ' + esc(entry.provider) + '</span>' +
-        '<span>Results: ' + entry.total + '</span>' +
+        '<span>' + (op === 'extract' ? 'URLs: ' : 'Results: ') + entry.total + '</span>' +
         '<span>Latency: ' + fmtLatency(entry.latency_ms) + '</span>' +
         '<span>' + fmtTime(entry.timestamp) + '</span>' +
       '</div>' +
-      (results.length ? results.map((r, i) => renderResult(r, i)).join('') :
-        '<div class="history-empty">无存储结果</div>') +
+      bodyHtml +
     '</div>';
   } catch(e) {
     el.innerHTML = '<div class="history-detail-card history-empty" style="color:var(--red);">加载失败</div>';

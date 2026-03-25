@@ -185,18 +185,14 @@ class Gateway:
 
             response = await self.executor.execute("extract", op, provider=provider)
 
-        # Save to history file
-        combined_content = "\n\n".join(
-            [f"=== {r.url} ===\n" + (f"Title: {r.title}\n" if r.title else "") + (f"Error: {r.error}\n" if r.error else "") + r.content for r in response.results]
-        )
-        result_file = await self.history.record_content(
-            operation="extract",
-            query=", ".join(urls)[:100],
+        # Save each URL as a separate file with line wrapping
+        file_manifest = await self.history.record_extract(
+            urls=urls,
+            results=response.results,
             provider=response.provider,
             latency_ms=response.latency_ms,
-            content=combined_content
         )
-        response.result_file = result_file
+        response.result_files = file_manifest
         return response
 
     async def research(self, topic: str, depth: str = "auto", provider: str | None = None) -> ResearchResponse:

@@ -76,6 +76,7 @@ class ExtractResponse(BaseModel):
     provider: str
     latency_ms: float
     result_file: str | None = None
+    result_files: list[dict] | None = None  # per-URL file paths [{url, title, file, chars}]
 
 
 class ResearchRequest(BaseModel):
@@ -122,4 +123,6 @@ class HistoryEntry(BaseModel):
     total: int
     latency_ms: float
     timestamp: str
+    operation: str = "search"  # search, extract, research
     results: list[SearchResult] | None = None
+    files: list[dict] | None = None  # for extract: per-URL file manifest

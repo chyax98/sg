@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import textwrap
 import time
 import uuid
 from datetime import datetime
@@ -13,6 +14,31 @@ from ..models.search import HistoryEntry, SearchRequest, SearchResponse, SearchR
 
 logger = logging.getLogger(__name__)
 
+# Max characters per line for view files.
+# AI tools like view_file are line-based, so shorter lines = better random access.
+_LINE_WIDTH = 200
+
+
+def _wrap_content(content: str) -> str:
+    """Wrap long lines for AI-friendly line-based access.
+
+    Preserves existing newlines and markdown structure.
+    Only wraps lines exceeding _LINE_WIDTH characters.
+    """
+    out_lines: list[str] = []
+    for line in content.split("\n"):
+        if len(line) <= _LINE_WIDTH:
+            out_lines.append(line)
+        else:
+            # Wrap long lines, preserving leading whitespace
+            wrapped = textwrap.fill(
+                line,
+                width=_LINE_WIDTH,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            out_lines.extend(wrapped.split("\n"))
+    return "\n".join(out_lines)
 
 def _format_view_content(response: SearchResponse) -> str:
     """Format search results as JSONL - each line is a complete result.
@@ -129,7 +155,7 @@ class SearchHistory:
     ) -> str:
         """Save content operation with view file (for extract/research).
 
-        Same storage structure as search - JSONL format for unified handling.
+        Stores as line-wrapped plain text for AI-friendly random access.
         Returns view file path.
         """
         now = datetime.now()
@@ -141,15 +167,8 @@ class SearchHistory:
         view_file = view_month / f"{entry_id}.txt"
         trace_file = trace_month / f"{entry_id}.json"
 
-        # Write view file (JSONL format, same as search)
-        # Single entry with operation info in title
-        view_data = {
-            "index": 1,
-            "title": f"[{operation.upper()}] {query[:80]}",
-            "url": "",
-            "content": content,
-        }
-        view_content = json.dumps(view_data, ensure_ascii=False)
+        # Wrap content for line-based reading
+        wrapped = _wrap_content(content)
 
         # Write trace file (metadata)
         trace_data = {
@@ -165,7 +184,7 @@ class SearchHistory:
         }
 
         try:
-            await asyncio.to_thread(view_file.write_text, view_content)
+            await asyncio.to_thread(view_file.write_text, wrapped)
             await asyncio.to_thread(
                 trace_file.write_text, json.dumps(trace_data, ensure_ascii=False)
             )
@@ -174,6 +193,92 @@ class SearchHistory:
         except Exception as e:
             logger.error(f"Failed to save content: {e}")
             raise
+
+    async def record_extract(
+        self,
+        urls: list[str],
+        results: list,  # list of ExtractResult
+        provider: str,
+        latency_ms: float,
+    ) -> list[dict]:
+        """Save extract results as per-URL files with line wrapping.
+
+        Each URL gets its own file with a metadata header + wrapped content.
+        Returns list of [{url, title, file, chars, lines, error}].
+        """
+        now = datetime.now()
+        ts = int(time.time() * 1000)
+        base_id = f"{ts}-{uuid.uuid4().hex[:8]}"
+        month = now.strftime("%Y-%m")
+        view_month, trace_month = self._ensure_dirs(month)
+
+        file_manifest: list[dict] = []
+
+        for i, r in enumerate(results):
+            suffix = f"-{i + 1}" if len(results) > 1 else ""
+            entry_id = f"{base_id}{suffix}"
+            view_file = view_month / f"{entry_id}.txt"
+
+            if r.error:
+                # Error: minimal file
+                content = f"URL: {r.url}\nError: {r.error}\n"
+                file_manifest.append({
+                    "url": r.url,
+                    "title": r.title or "",
+                    "file": str(view_file),
+                    "chars": 0,
+                    "lines": 0,
+                    "error": r.error,
+                })
+            else:
+                # Header + wrapped content
+                header_lines = [f"URL: {r.url}"]
+                if r.title:
+                    header_lines.append(f"Title: {r.title}")
+                header_lines.append("---")
+
+                wrapped_body = _wrap_content(r.content)
+                body_line_count = wrapped_body.count("\n") + 1
+
+                content = "\n".join(header_lines) + "\n" + wrapped_body + "\n"
+
+                file_manifest.append({
+                    "url": r.url,
+                    "title": r.title or "",
+                    "file": str(view_file),
+                    "chars": len(r.content),
+                    "lines": body_line_count,
+                })
+
+            try:
+                await asyncio.to_thread(view_file.write_text, content)
+            except Exception as e:
+                logger.error(f"Failed to save extract file for {r.url}: {e}")
+                # Mark manifest entry as failed so AI won't try to read missing file
+                file_manifest[-1]["error"] = f"save failed: {e}"
+                file_manifest[-1].pop("file", None)
+
+        # Write trace file (one trace for the whole extract operation)
+        trace_file = trace_month / f"{base_id}.json"
+        trace_data = {
+            "id": base_id,
+            "timestamp": now.isoformat(),
+            "ts": ts,
+            "operation": "extract",
+            "query": ", ".join(urls)[:100],
+            "provider": provider,
+            "total": len(results),
+            "latency_ms": latency_ms,
+            "files": file_manifest,
+        }
+        try:
+            await asyncio.to_thread(
+                trace_file.write_text, json.dumps(trace_data, ensure_ascii=False)
+            )
+        except Exception as e:
+            logger.error(f"Failed to save extract trace: {e}")
+
+        return file_manifest
 
     async def list(self, limit: int = 50, offset: int = 0):
         """List recent entries from trace files (just metadata)."""
@@ -195,6 +300,7 @@ class SearchHistory:
                         total=data["total"],
                         latency_ms=data["latency_ms"],
                         timestamp=data["timestamp"],
+                        operation=data.get("operation", "search"),
                         results=None,
                     )
                 )
@@ -227,24 +333,41 @@ class SearchHistory:
             # Read trace for metadata
             trace_text = await asyncio.to_thread(trace_file.read_text)
             trace_data = json.loads(trace_text)
+            operation = trace_data.get("operation", "search")
 
-            # Read view file for results (TRUTH SOURCE)
-            view_file = Path(trace_data["view_file"])
-            if not view_file.exists():
+            if operation == "extract" and "files" in trace_data:
+                # Extract entries: return file manifest from trace
+                return HistoryEntry(
+                    id=trace_data["id"],
+                    query=trace_data["query"],
+                    provider=trace_data["provider"],
+                    total=trace_data["total"],
+                    latency_ms=trace_data["latency_ms"],
+                    timestamp=trace_data["timestamp"],
+                    operation=operation,
+                    files=trace_data["files"],
+                )
+            elif "view_file" in trace_data:
+                # Search / research entries: parse JSONL view file
+                view_file = Path(trace_data["view_file"])
+                if not view_file.exists():
+                    return None
+
+                view_text = await asyncio.to_thread(view_file.read_text)
+                results = _parse_view_content(view_text, trace_data.get("provider", ""))
+
+                return HistoryEntry(
+                    id=trace_data["id"],
+                    query=trace_data["query"],
+                    provider=trace_data["provider"],
+                    total=trace_data["total"],
+                    latency_ms=trace_data["latency_ms"],
+                    timestamp=trace_data["timestamp"],
+                    operation=operation,
+                    results=results,
+                )
+            else:
                 return None
-
-            view_text = await asyncio.to_thread(view_file.read_text)
-            results = _parse_view_content(view_text, trace_data.get("provider", ""))
-
-            return HistoryEntry(
-                id=trace_data["id"],
-                query=trace_data["query"],
-                provider=trace_data["provider"],
-                total=trace_data["total"],
-                latency_ms=trace_data["latency_ms"],
-                timestamp=trace_data["timestamp"],
-                results=results,
-            )
         except (json.JSONDecodeError, KeyError, FileNotFoundError):
             return None
 
