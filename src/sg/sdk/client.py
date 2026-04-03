@@ -56,7 +56,6 @@ class SearchClient:
         urls: list[str],
         provider: str | None = None,
         format: str = "markdown",
-        extract_depth: str = "basic",
     ) -> ExtractResponse:
         """Extract content from URLs."""
         resp = self._client.post(
@@ -65,7 +64,6 @@ class SearchClient:
                 "urls": urls,
                 "provider": provider,
                 "format": format,
-                "extract_depth": extract_depth,
             },
             timeout=60.0,
         )
@@ -155,7 +153,6 @@ class AsyncSearchClient:
         urls: list[str],
         provider: str | None = None,
         format: str = "markdown",
-        extract_depth: str = "basic",
     ) -> ExtractResponse:
         """Extract content from URLs."""
         resp = await self._client.post(
@@ -164,7 +161,6 @@ class AsyncSearchClient:
                 "urls": urls,
                 "provider": provider,
                 "format": format,
-                "extract_depth": extract_depth,
             },
             timeout=60.0,
         )

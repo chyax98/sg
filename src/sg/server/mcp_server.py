@@ -19,7 +19,7 @@ def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
 
     lines = [
         f"q: {query}",
-        f"file: {result_file}",
+        f"file:{result_file}",
         "",
         f"results[{min(total, max_preview)}]{{title,url,score}}:",
     ]
@@ -152,6 +152,7 @@ class MCPServer:
         async def extract(
             urls: list[str],
             format: str = "markdown",
+            provider: str | None = None,
             extra: dict | None = None,
         ) -> str:
             """Extract clean, readable content from web pages.
@@ -170,6 +171,7 @@ class MCPServer:
                 urls: List of URLs to extract content from (e.g., ["https://example.com/article"])
                      Can process multiple URLs in a single call
                 format: Output format - "markdown" (default, preserves structure) or "text" (plain text)
+                provider: Specific provider to use (e.g., "firecrawl", "jina"). If not specified, uses default routing
                 extra: Extra parameters for specific providers (e.g., {"device": "mobile", "js_render": false})
                        Supported params vary by provider - unsupported params are ignored
 
@@ -183,36 +185,23 @@ class MCPServer:
                 "/extract",
                 {
                     "urls": urls,
+                    "provider": provider,
                     "format": format,
                     "extra": extra or {},
                 },
             )
 
             lines = []
-
-            # Use per-URL file manifest if available
-            result_files = result.get("result_files")
-            if result_files:
-                for f in result_files:
-                    if f.get("error"):
-                        lines.append(f"error: {f['error']} | {f.get('url', '')}")
-                    else:
-                        title = f.get('title') or ''
-                        lines.append(
-                            f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
-                        )
-                        lines.append(f"  {f.get('url', '')}")
-            else:
-                # Fallback: old format
-                result_file = result.get("result_file")
-                if result_file:
-                    lines.append(f"file: {result_file}")
-                for r in result.get("results", []):
-                    if r.get("error"):
-                        lines.append(f"error: {r['error']} | {r.get('url', '')}")
-                    else:
-                        lines.append(f"URL: {r.get('url', '')}")
-                        lines.append(f"Title: {r.get('title', '')}")
+            result_files = result.get("result_files", [])
+            for f in result_files:
+                if f.get("error"):
+                    lines.append(f"error: {f['error']} | {f.get('url', '')}")
+                else:
+                    title = f.get('title') or ''
+                    lines.append(
+                        f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
+                    )
+                    lines.append(f"  {f.get('url', '')}")
 
             return "\n".join(lines)
 
