@@ -55,8 +55,6 @@ class ExtractRequest(BaseModel):
 
     urls: list[str]
     format: str = "markdown"
-    extract_depth: str = "basic"
-    query: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -75,7 +73,6 @@ class ExtractResponse(BaseModel):
     results: list[ExtractResult]
     provider: str
     latency_ms: float
-    result_file: str | None = None
     result_files: list[dict] | None = None  # per-URL file paths [{url, title, file, chars}]
 
 

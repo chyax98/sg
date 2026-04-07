@@ -323,21 +323,27 @@ def extract(
         resp.raise_for_status()
         data = resp.json()
 
-        result_file = data.get("result_file", "")
-        if result_file:
-            click.echo(f"Hint: 提取的内容（共 {len(data.get('results', []))} 个 URL）已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 结果！")
-        click.echo("")
-
-        for r in data.get("results", []):
-            click.echo(f"URL: {r['url']}")
-            if r.get("title"):
-                click.echo(f"Title: {r['title']}")
-            if r.get("error"):
-                click.echo(f"Status: Error - {r['error']}")
-            else:
-                length = len(r.get("content", ""))
-                click.echo(f"Status: Success ({length} chars)")
-            click.echo("")
+        result_files = data.get("result_files")
+        if result_files:
+            for f in result_files:
+                if f.get("error"):
+                    click.echo(f"error: {f['error']} | {f.get('url', '')}")
+                else:
+                    title = f.get("title") or ""
+                    click.echo(
+                        f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
+                    )
+                    click.echo(f"  {f.get('url', '')}")
+        else:
+            for r in data.get("results", []):
+                if r.get("error"):
+                    click.echo(f"error: {r['error']} | {r.get('url', '')}")
+                else:
+                    click.echo(f"URL: {r['url']}")
+                    if r.get("title"):
+                        click.echo(f"Title: {r['title']}")
+                    length = len(r.get("content", ""))
+                    click.echo(f"Status: Success ({length} chars)")
 
     except httpx.ConnectError:
         click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
