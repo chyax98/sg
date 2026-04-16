@@ -24,6 +24,7 @@
 
 - [特性](#特性)
 - [快速开始](#快速开始)
+- [AI Skill 安装](#ai-skill-安装)
 - [MCP 集成](#mcp-集成claude-desktopcode)
 - [CLI 命令](#cli-命令)
 - [HTTP API](#http-api)
@@ -54,7 +55,7 @@ make dev        # 开发模式
 
 ```bash
 # 初始化配置文件（创建 ~/.sg/config.json）
-sg init
+search-gateway init
 
 # 编辑配置文件，添加 API keys
 vim ~/.sg/config.json
@@ -65,8 +66,8 @@ vim ~/.sg/config.json
 ### 启动
 
 ```bash
-sg start              # 默认端口 8100
-sg start --port 9000  # 自定义端口
+search-gateway start              # 默认端口 8100
+search-gateway start --port 9000  # 自定义端口
 ```
 
 ### MCP 集成（Claude Desktop / Claude Code）
@@ -79,7 +80,7 @@ Search Gateway 提供 MCP (Model Context Protocol) 服务器，通过 stdio 模�
 
 ```bash
 # 使用 claude mcp add 命令
-claude mcp add search-gateway stdio sg mcp
+claude mcp add search-gateway stdio search-gateway mcp
 
 # 或手动编辑 ~/.claude.json
 ```
@@ -90,7 +91,7 @@ claude mcp add search-gateway stdio sg mcp
 {
   "mcpServers": {
     "search-gateway": {
-      "command": "sg",
+      "command": "search-gateway",
       "args": ["mcp"],
       "type": "stdio"
     }
@@ -110,14 +111,14 @@ claude mcp add search-gateway stdio sg mcp
 {
   "mcpServers": {
     "search-gateway": {
-      "command": "/path/to/sg",
+      "command": "/path/to/search-gateway",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-> **注意**：`command` 需要是 `sg` 的完整路径，可以通过 `which sg` 获取。
+> **注意**：`command` 需要是 `search-gateway` 的完整路径，可以通过 `which search-gateway` 获取。
 
 #### 可用工具
 
@@ -141,24 +142,38 @@ MCP 服务器提供以下工具：
 
 ```bash
 # 搜索
-sg search "MCP protocol"
-sg search "AI news" -p brave          # 指定 provider
-sg search "Python tutorial" -f json   # JSON 输出
+search-gateway search "MCP protocol"
+search-gateway search "AI news" -p brave          # 指定 provider
+search-gateway search "Python tutorial" -f json   # JSON 输出
 
 # 内容提取
-sg extract https://example.com
+search-gateway extract https://example.com
 
 # 深度研究
-sg research "AI agents trends" --depth pro
+search-gateway research "AI agents trends" --depth pro
 
 # 管理
-sg status       # 网关状态（含 circuit breaker 状态）
-sg providers    # Provider 列表
-sg health       # 健康检查
-sg history      # 搜索历史
-sg web          # 打开 Web UI
-sg stop         # 停止网关
+search-gateway status       # 网关状态（含 circuit breaker 状态）
+search-gateway providers    # Provider 列表
+search-gateway health       # 健康检查
+search-gateway history      # 搜索历史
+search-gateway web          # 打开 Web UI
+search-gateway stop         # 停止网关
 ```
+
+## AI Skill 安装
+
+让 AI 编码助手自动使用 Search Gateway 进行网络搜索，推荐安装 Skill：
+
+```bash
+# 默认安装到 ~/.agents/skills/search-gateway
+search-gateway skill install
+
+# 或安装到 Claude Code 的 skills 目录
+search-gateway skill install --path ~/.claude/skills
+```
+
+安装后，当 AI 遇到搜索需求时会**自动触发**，优先调用 `search-gateway search` / `research` / `extract`。
 
 ### 开发工具
 

@@ -86,7 +86,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
                 click.echo("\n✓ Gateway started successfully!")
                 click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
                 click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-                click.echo("\n  Commands:  sg status | sg stop | sg web")
+                click.echo("\n  Commands:  search-gateway status | search-gateway stop | search-gateway web")
                 click.echo(f"  Logs:      tail -f {log_file}\n")
             else:
                 click.echo(
@@ -116,7 +116,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-        click.echo("\n  Commands:  sg search 'query' | sg status | sg stop\n")
+        click.echo("\n  Commands:  search-gateway search 'query' | search-gateway status | search-gateway stop\n")
         await gateway.wait_shutdown()
 
     try:
@@ -275,7 +275,7 @@ def search(
                 _print_result_file(data)
 
     except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Error: Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -346,7 +346,7 @@ def extract(
                     click.echo(f"Status: Success ({length} chars)")
 
     except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Error: Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -386,7 +386,7 @@ def research(topic: str, depth: str, port: int, config: str | None):
         click.echo(content[:1000] + ("\n\n...(truncated)..." if len(content) > 1000 else ""))
 
     except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Error: Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -433,7 +433,7 @@ def status(port: int, config: str | None):
                 )
 
     except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
 
 
@@ -475,7 +475,7 @@ def providers(port: int, config: str | None):
             click.echo()
 
     except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
 
 
@@ -498,7 +498,7 @@ def health(port: int):
         click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
 
     except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
 
 
@@ -551,10 +551,10 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
         for e in entries:
             ts = e["timestamp"][:19].replace("T", " ")
             click.echo(f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)")
-        click.echo("\nUse 'sg history <id>' to see full results.")
+        click.echo("\nUse 'search-gateway history <id>' to see full results.")
 
     except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
+        click.echo("Gateway not running. Start with 'search-gateway start'", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -598,17 +598,17 @@ def init(config: str | None):
     click.echo(f"\n✓ Created config: {config_path}")
     click.echo("\nDefault provider: DuckDuckGo (free, no API key required)")
     click.echo("\nTo add more providers, edit the config file or use the Web UI:")
-    click.echo("  sg start && sg web")
+    click.echo("  search-gateway start && search-gateway web")
     click.echo("\nAvailable providers:")
     click.echo("  - Tavily (search, extract, research) - requires API key")
     click.echo("  - Exa (search, extract) - requires API key")
     click.echo("  - Brave (search) - requires API key")
-    click.echo("  - You.com (search) - requires API key")
+    click.echo("  - You.com (search, extract) - requires API key")
     click.echo("  - Firecrawl (extract) - requires API key")
     click.echo("  - Jina (extract) - free, no API key")
     click.echo("  - SearXNG (search) - requires self-hosted instance")
     click.echo("\nTest your setup:")
-    click.echo("  sg search 'test query'")
+    click.echo("  search-gateway search 'test query'")
 
 
 @cli.command()
@@ -648,7 +648,7 @@ def setup(copy: bool):
                 click.echo("Prompt copied to clipboard. Paste it to your AI agent to start setup.")
             except FileNotFoundError:
                 click.echo("Error: no clipboard tool found (pbcopy/xclip)", err=True)
-                click.echo("Use 'sg setup' without --copy to print the prompt.", err=True)
+                click.echo("Use 'search-gateway setup' without --copy to print the prompt.", err=True)
                 sys.exit(1)
     else:
         click.echo(prompt)
@@ -668,6 +668,81 @@ def _find_prompt(name: str) -> Path | None:
             return installed_path
 
     return None
+
+
+_SKILL_MD = """---
+name: search-gateway
+description: >
+  Use when the user needs web search, latest information, webpage content extraction, or deep research.
+  Triggers on "搜索一下", "查一下", "最新", "提取网页", "深度研究", "search for", "look up", "extract URL".
+---
+
+# Search Gateway
+
+## 执行检查点
+
+- [ ] 结果包含 `file:` 路径时，**必须读取该文件**获取完整内容
+- [ ] 不要主动指定 `-p provider`，让自动故障转移工作
+- [ ] 如果命令报错网关未启动，重试一次（CLI 会自动后台启动）
+
+## 核心命令
+
+| 场景 | 命令 |
+|------|------|
+| 搜索 | `search-gateway search "query"` |
+| 批量搜索 | `search-gateway search "q1" "q2" "q3"` |
+| 限制结果数 | `search-gateway search "query" -n 10` |
+| 按时间过滤 | `search-gateway search "query" --time-range week` |
+| 限定域名 | `search-gateway search "query" --include-domain github.com` |
+| 排除域名 | `search-gateway search "query" --exclude-domain medium.com` |
+| 提取网页 | `search-gateway extract "https://example.com"` |
+| 深度研究 | `search-gateway research "topic"` |
+| 更深入研究 | `search-gateway research "topic" -d pro` |
+| 查看状态 | `search-gateway status` |
+
+## Known Gotchas
+
+- **不读文件 = 丢失结果**：`search-gateway search` 和 `research` 的完整结果通常在返回的文件路径中，stdout 只是预览。看到 `file:` 必须执行 ReadFile 读取。
+- **不要手动指定 provider**：自动路由已配置多 provider 故障转移，手动 `-p tavily` 等会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
+- **网关未启动时自动启动**：首次调用可能因后台启动而稍慢，如果收到 "Gateway not running"，等待 3-5 秒后重试即可。
+- **extract 结果也要读文件**：`search-gateway extract` 同样返回文件路径，必须读取文件获取提取内容。
+
+## MCP 集成（可选）
+
+如果当前 AI 工具支持 MCP，可配置原生工具调用：
+- Claude Code: `claude mcp add search-gateway stdio search-gateway mcp`
+"""
+
+
+@cli.group()
+def skill():
+    """Manage AI coding assistant skills."""
+    pass
+
+
+@skill.command(name="install")
+@click.option(
+    "--path",
+    "-p",
+    default=None,
+    help="Skills root directory (default: ~/.agents/skills)",
+)
+def skill_install(path: str | None):
+    """Install Search Gateway skill for AI assistants."""
+    skills_dir = Path(path).expanduser() if path else Path.home() / ".agents" / "skills"
+    target = skills_dir / "search-gateway"
+
+    if not click.confirm(f"Install skill to {target}?"):
+        click.echo("Cancelled.")
+        return
+
+    target.mkdir(parents=True, exist_ok=True)
+    skill_file = target / "SKILL.md"
+    skill_file.write_text(_SKILL_MD, encoding="utf-8")
+
+    click.echo(f"\n✓ Skill installed: {skill_file}")
+    click.echo("\nSupported AI tools will now automatically use search-gateway for web search.")
+    click.echo("\nTip: Restart your AI coding assistant to load the new skill.")
 
 
 if __name__ == "__main__":

@@ -44,19 +44,19 @@ clean:
 
 # 启动服务（前台）
 start:
-	sg start
+	search-gateway start
 
 # 启动服务（后台守护模式）
 daemon:
-	sg start --daemon
+	search-gateway start --daemon
 
 # 停止服务
 stop:
-	sg stop
+	search-gateway stop
 
 # 查看状态
 status:
-	sg status
+	search-gateway status
 
 # 显示帮助
 help:

@@ -42,7 +42,7 @@ def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
 class MCPServer:
     """MCP Server for Search Gateway.
 
-    Run with `sg mcp` to start in stdio mode for Claude Desktop integration.
+    Run with `search-gateway mcp` to start in stdio mode for Claude Desktop integration.
 
     This server connects to a running gateway daemon (starts one if needed)
     and exposes MCP tools for LLM integration.

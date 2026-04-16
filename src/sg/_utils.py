@@ -21,7 +21,7 @@ def start_gateway_background(port: int = 8100, config: str | None = None) -> boo
         return False
 
     # Start gateway in background using subprocess
-    cmd = ["sg", "start", "--port", str(port)]
+    cmd = ["search-gateway", "start", "--port", str(port)]
     if config:
         cmd.extend(["--config", config])
 

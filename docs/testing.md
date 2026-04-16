@@ -1,12 +1,12 @@
 # 测试手册
 
-黑盒测试用例，基于 `sg` CLI 进行验证。
+黑盒测试用例，基于 `search-gateway` CLI 进行验证。
 
 ## 环境准备
 
 ```bash
 # 启动网关（DEBUG 级别，输出到文件）
-sg start --log-level DEBUG --log-file ~/.sg/logs/test.log
+search-gateway start --log-level DEBUG --log-file ~/.sg/logs/test.log
 
 # 查看实时日志
 tail -f ~/.sg/logs/test.log
@@ -19,7 +19,7 @@ tail -f ~/.sg/logs/test.log
 **验证**：基本搜索功能
 
 ```bash
-sg search "python async"
+search-gateway search "python async"
 ```
 
 预期：
@@ -35,7 +35,7 @@ sg search "python async"
 **验证**：并行执行多个查询
 
 ```bash
-sg search "python" "rust" "go"
+search-gateway search "python" "rust" "go"
 ```
 
 预期：
@@ -49,7 +49,7 @@ sg search "python" "rust" "go"
 **验证**：`-p` 参数锁定 provider group
 
 ```bash
-sg search "test" -p tavily
+search-gateway search "test" -p tavily
 ```
 
 预期：
@@ -63,7 +63,7 @@ sg search "test" -p tavily
 **验证**：多次请求总是从最高优先级 provider 开始
 
 ```bash
-sg search "test1" && sg search "test2" && sg search "test3"
+search-gateway search "test1" && search-gateway search "test2" && search-gateway search "test3"
 ```
 
 预期（日志）：
@@ -82,7 +82,7 @@ Trying group: exa
 前置：将 tavily 的 `selection` 改为 `round_robin`，禁用 exa。
 
 ```bash
-sg search "test1" && sg search "test2" && sg search "test3"
+search-gateway search "test1" && search-gateway search "test2" && search-gateway search "test3"
 ```
 
 预期：tavily-2 和 tavily-3 交替出现。
@@ -98,7 +98,7 @@ sg search "test1" && sg search "test2" && sg search "test3"
 前置：将 exa 的 `api_key` 改为无效值。
 
 ```bash
-sg search "test failover"
+search-gateway search "test failover"
 ```
 
 预期：
@@ -116,7 +116,7 @@ sg search "test failover"
 前置：禁用除 duckduckgo 外的所有 provider。
 
 ```bash
-sg search "test fallback"
+search-gateway search "test fallback"
 ```
 
 预期：
@@ -132,13 +132,13 @@ sg search "test fallback"
 前置：将 exa 的 `api_key` 改为无效值。
 
 ```bash
-sg search "test circuit 1"
-sg status
+search-gateway search "test circuit 1"
+search-gateway status
 ```
 
 预期：
 - 第一次失败后熔断器即打开
-- `sg status` 显示 `exa-1: [open], reason=auth, retry in ~604800s`
+- `search-gateway status` 显示 `exa-1: [open], reason=auth, retry in ~604800s`
 - 日志：`Circuit breaker OPENED: failure_type=auth, timeout=168.0h`
 
 ---
@@ -150,12 +150,12 @@ sg status
 前置：接 TC-008，恢复正确的 api_key。
 
 ```bash
-sg health
-sg search "test recovery"
+search-gateway health
+search-gateway search "test recovery"
 ```
 
 预期：
-- `sg health` 显示 exa-1 恢复
+- `search-gateway health` 显示 exa-1 恢复
 - 日志：`Circuit breaker manually reset to CLOSED state`
 - 后续搜索重新使用 exa-1
 
@@ -166,7 +166,7 @@ sg search "test recovery"
 **验证**：日志包含完整执行链路
 
 ```bash
-sg search "test debug"
+search-gateway search "test debug"
 cat ~/.sg/logs/test.log | grep -E "(Executing|Candidate|Trying|Selecting|Selected|succeeded|completed|History saved)"
 ```
 
@@ -186,10 +186,10 @@ History saved: ...
 
 ## TC-018 网关状态查询
 
-**验证**：`sg status` 展示完整状态
+**验证**：`search-gateway status` 展示完整状态
 
 ```bash
-sg status
+search-gateway status
 ```
 
 预期包含：
@@ -202,7 +202,7 @@ sg status
 ## TC-019 Provider 列表
 
 ```bash
-sg providers
+search-gateway providers
 ```
 
 预期：显示每个 provider 的 capabilities、search_params、priority。
@@ -212,7 +212,7 @@ sg providers
 ## TC-022 特殊字符查询
 
 ```bash
-sg search "test \"quotes\" and 'apostrophes'"
+search-gateway search "test \"quotes\" and 'apostrophes'"
 ```
 
 预期：正常返回结果，不崩溃，不注入。
@@ -223,13 +223,13 @@ sg search "test \"quotes\" and 'apostrophes'"
 
 ```bash
 # Search
-sg search "python programming"
+search-gateway search "python programming"
 
 # Extract
-sg extract "https://docs.python.org/3/tutorial/index.html"
+search-gateway extract "https://docs.python.org/3/tutorial/index.html"
 
 # Research
-sg research "artificial intelligence trends 2026"
+search-gateway research "artificial intelligence trends 2026"
 ```
 
 预期：三个命令均成功返回结果文件。
