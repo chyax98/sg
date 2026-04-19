@@ -47,6 +47,11 @@ class TestProviderConfig:
         assert instance.url == "https://example.com"
         assert instance.timeout == 15000
 
+    def test_instance_supports_env_overrides(self):
+        instance = ProviderInstanceConfig(id="t1", env={"TAVILY_API_KEY": "abc"})
+
+        assert instance.env == {"TAVILY_API_KEY": "abc"}
+
 
 class TestExecutorConfig:
     def test_defaults(self):
@@ -152,3 +157,26 @@ class TestGatewayConfig:
         loaded = json.loads(Path(path).read_text())
         assert "version" not in loaded
         assert loaded["providers"]["test"]["type"] == "tavily"
+
+    def test_loads_instance_env(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "providers": {
+                        "exa": {
+                            "type": "exa",
+                            "instances": [
+                                {
+                                    "id": "exa-1",
+                                    "env": {"EXA_API_KEY": "key1"},
+                                }
+                            ],
+                        }
+                    }
+                }
+            )
+        )
+
+        config = GatewayConfig.load(str(config_file))
+        assert config.providers["exa"].instances[0].env == {"EXA_API_KEY": "key1"}

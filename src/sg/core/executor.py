@@ -192,6 +192,7 @@ class Executor:
 
         max_attempts = min(len(groups), self.config.failover.max_attempts)
         last_error: Exception | None = None
+        attempt_errors: list[str] = []
 
         tried_groups = groups[:max_attempts]
         logger.debug(f"Candidate groups: {tried_groups}")
@@ -230,6 +231,8 @@ class Executor:
                     logger.info(f"Request completed: provider={provider_instance.name}")
                     return result
                 last_error = error
+                if error is not None and not isinstance(error, ProviderCapabilityError):
+                    attempt_errors.append(f"{provider_instance.name}: {error}")
 
                 if isinstance(error, ProviderCapabilityError):
                     break
@@ -258,8 +261,11 @@ class Executor:
                     logger.info(f"Fallback to {provider_instance.name} succeeded")
                     return result
                 last_error = error
+                if error is not None and not isinstance(error, ProviderCapabilityError):
+                    attempt_errors.append(f"{provider_instance.name}: {error}")
 
-        raise RuntimeError(f"All providers failed. Last error: {last_error}")
+        detail = "; ".join(attempt_errors) if attempt_errors else str(last_error)
+        raise RuntimeError(f"All providers failed for '{capability}'. {detail}")
 
     def get_metrics(self) -> dict[str, dict[str, Any]]:
         result = {}

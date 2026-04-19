@@ -1,6 +1,5 @@
 """You.com provider — raw httpx (SDK is beta/auto-generated)."""
 
-import os
 import time
 
 import httpx
@@ -37,7 +36,7 @@ class YouComProvider(SearchProvider, ExtractProvider):
         self._client: httpx.AsyncClient | None = None
 
     async def initialize(self) -> bool:
-        api_key = self.api_key or os.environ.get("YOUCOM_API_KEY")
+        api_key = self.api_key or self.env_value("YOUCOM_API_KEY")
         if not api_key:
             return False
         self.api_key = api_key

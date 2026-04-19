@@ -128,6 +128,11 @@ class HTTPServer:
         request_origin = f"{request.url.scheme}://{request.headers.get('host', '')}"
         return origin == request_origin
 
+    @staticmethod
+    def _raise_internal_error(action: str, error: Exception) -> None:
+        logger.exception("%s error", action)
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
     def _setup_routes(self):
         gw = self.gateway
 
@@ -156,8 +161,7 @@ class HTTPServer:
                 )
                 return result.model_dump()
             except Exception as e:
-                logger.error(f"Search error: {e}")
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                self._raise_internal_error("Search", e)
 
         @self.app.post("/search/batch")
         async def search_batch(body: SearchBatchBody):
@@ -174,8 +178,7 @@ class HTTPServer:
                 )
                 return [r.model_dump() for r in results]
             except Exception as e:
-                logger.error(f"Batch search error: {e}")
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                self._raise_internal_error("Batch search", e)
 
         @self.app.post("/extract")
         async def extract(body: ExtractBody):
@@ -188,8 +191,7 @@ class HTTPServer:
                 )
                 return result.model_dump()
             except Exception as e:
-                logger.error(f"Extract error: {e}")
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                self._raise_internal_error("Extract", e)
 
         @self.app.post("/research")
         async def research(body: ResearchBody):
@@ -201,8 +203,7 @@ class HTTPServer:
                 )
                 return result.model_dump()
             except Exception as e:
-                logger.error(f"Research error: {e}")
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                self._raise_internal_error("Research", e)
 
         # === Operational API ===
 
@@ -333,7 +334,7 @@ class HTTPServer:
                 await gw.reload_config()
                 return {"status": "ok"}
             except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                self._raise_internal_error("Reload config", e)
 
         # === History API ===
 

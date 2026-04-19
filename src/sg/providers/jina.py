@@ -42,6 +42,7 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
             timeout=self.timeout / 1000,
             follow_redirects=True,
         )
+        self.api_key = self.api_key or self.env_value("JINA_API_KEY")
         if self.api_key:
             self._search_client = httpx.AsyncClient(
                 base_url="https://s.jina.ai",

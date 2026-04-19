@@ -5,38 +5,10 @@ from typing import Any
 
 import httpx
 
+from .._agent_output import format_extract_output, format_research_output, format_search_output
 from .._utils import ensure_gateway_running
 
 logger = logging.getLogger(__name__)
-
-
-def _format_toon_preview(result: dict, max_preview: int = 5) -> str:
-    """Format search result as TOON for LLM tool response."""
-    query = result.get("query", "")
-    result_file = result.get("result_file", "")
-    results = result.get("results", [])
-    total = result.get("total", len(results))
-
-    lines = [
-        f"q: {query}",
-        f"file:{result_file}",
-        "",
-        f"results[{min(total, max_preview)}]{{title,url,score}}:",
-    ]
-
-    for i, r in enumerate(results[:max_preview], 1):
-        score = r.get("score")
-        score_str = f"{score:.2f}" if score else "-"
-        title = (
-            r.get("title", "")[:50] + "..." if len(r.get("title", "")) > 50 else r.get("title", "")
-        )
-        url = r.get("url", "")
-        lines.append(f"  {i},{title},{url},{score_str}")
-
-    if total > max_preview:
-        lines.append(f"  ... ({total - max_preview} more)")
-
-    return "\n".join(lines)
 
 
 class MCPServer:
@@ -146,7 +118,7 @@ class MCPServer:
                 },
             )
 
-            return _format_toon_preview(result)
+            return format_search_output(result)
 
         @self.mcp.tool()
         async def extract(
@@ -177,7 +149,7 @@ class MCPServer:
 
             Returns:
                 A file path containing the extracted JSON data, and a summary of the URLs processed.
-                You MUST read the returned file path to access the full extracted contents, 
+                You MUST read the returned file path to access the full extracted contents,
                 as they are not returned directly to save context space.
                 The file contains a single JSON line with the extracted content.
             """
@@ -191,19 +163,7 @@ class MCPServer:
                 },
             )
 
-            lines = []
-            result_files = result.get("result_files", [])
-            for f in result_files:
-                if f.get("error"):
-                    lines.append(f"error: {f['error']} | {f.get('url', '')}")
-                else:
-                    title = f.get('title') or ''
-                    lines.append(
-                        f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
-                    )
-                    lines.append(f"  {f.get('url', '')}")
-
-            return "\n".join(lines)
+            return format_extract_output(result)
 
         @self.mcp.tool()
         async def research(
@@ -231,7 +191,7 @@ class MCPServer:
 
             Returns:
                 A file path containing the research report.
-                You MUST read the returned file path to access the full report, 
+                You MUST read the returned file path to access the full report,
                 as it is not returned directly to save context space.
                 The file contains line-wrapped plain text.
 
@@ -245,11 +205,7 @@ class MCPServer:
                 },
             )
 
-            result_file = result.get("result_file", "")
-            content = result.get("content", "")
-            total_lines = content.count("\n") + 1 if content else 0
-
-            return f"file:{result_file}\ntopic: {result.get('topic', topic)}\n{len(content)}c {total_lines}L"
+            return format_research_output(result)
 
         @self.mcp.tool()
         async def list_providers() -> str:

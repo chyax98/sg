@@ -32,6 +32,7 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
         self._client = None
 
     async def initialize(self) -> bool:
+        self.api_key = self.api_key or self.env_value("FIRECRAWL_API_KEY")
         if not self.api_key:
             return False
         from firecrawl import AsyncFirecrawl

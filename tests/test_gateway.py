@@ -114,6 +114,32 @@ class TestGatewaySearch:
         await gateway.search("test")
         gateway.history.record.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_search_batch_keeps_failed_queries(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19013)
+
+        async def fake_search(query, **kwargs):
+            if query == "bad":
+                raise RuntimeError("boom")
+            return SearchResponse(
+                query=query,
+                provider="mock",
+                results=[],
+                total=0,
+                latency_ms=10.0,
+            )
+
+        gateway.search = AsyncMock(side_effect=fake_search)
+
+        results = await gateway.search_batch(["ok1", "bad", "ok2"])
+
+        assert [result.query for result in results] == ["ok1", "bad", "ok2"]
+        assert results[1].error == "boom"
+        assert results[1].total == 0
+
 
 class TestGatewayExtract:
     @pytest.mark.asyncio
@@ -133,9 +159,17 @@ class TestGatewayExtract:
         gateway.executor.execute = AsyncMock(return_value=mock_response)
         gateway.executor.available_group_count = MagicMock(return_value=1)
         gateway.history = MagicMock()
-        gateway.history.record_extract = AsyncMock(return_value=[
-            {"url": "https://example.com", "title": "Example", "file": "/tmp/x.txt", "chars": 9, "lines": 1},
-        ])
+        gateway.history.record_extract = AsyncMock(
+            return_value=[
+                {
+                    "url": "https://example.com",
+                    "title": "Example",
+                    "file": "/tmp/x.txt",
+                    "chars": 9,
+                    "lines": 1,
+                },
+            ]
+        )
 
         result = await gateway.extract(["https://example.com"])
 
@@ -169,6 +203,56 @@ class TestGatewayExtract:
 
         assert result.result_files == expected_manifest
         assert result.result_files[0]["url"] == "https://a.com"
+
+    @pytest.mark.asyncio
+    async def test_extract_normalizes_missing_results_to_requested_urls(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19022)
+        mock_response = ExtractResponse(
+            results=[
+                ExtractResult(url="https://b.com", content="B content", title="B"),
+            ],
+            provider="exa",
+            latency_ms=100.0,
+        )
+        gateway.executor = MagicMock(spec=Executor)
+        gateway.executor.execute = AsyncMock(return_value=mock_response)
+        gateway.executor.available_group_count = MagicMock(return_value=1)
+        gateway.history = MagicMock()
+        gateway.history.record_extract = AsyncMock(return_value=[])
+
+        result = await gateway.extract(["https://a.com", "https://b.com"])
+
+        assert [item.url for item in result.results] == ["https://a.com", "https://b.com"]
+        assert result.results[0].error == "provider returned no extract result"
+        assert result.results[1].content == "B content"
+
+    @pytest.mark.asyncio
+    async def test_extract_normalizes_reordered_results(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19023)
+        mock_response = ExtractResponse(
+            results=[
+                ExtractResult(url="https://b.com", content="B content", title="B"),
+                ExtractResult(url="https://a.com", content="A content", title="A"),
+            ],
+            provider="exa",
+            latency_ms=100.0,
+        )
+        gateway.executor = MagicMock(spec=Executor)
+        gateway.executor.execute = AsyncMock(return_value=mock_response)
+        gateway.executor.available_group_count = MagicMock(return_value=1)
+        gateway.history = MagicMock()
+        gateway.history.record_extract = AsyncMock(return_value=[])
+
+        result = await gateway.extract(["https://a.com", "https://b.com"])
+
+        assert [item.url for item in result.results] == ["https://a.com", "https://b.com"]
+        assert [item.content for item in result.results] == ["A content", "B content"]
 
 
 class TestGatewayResearch:
@@ -240,11 +324,63 @@ class TestGatewayConfig:
         config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19050)
-        gateway.providers = MagicMock(spec=ProviderRegistry)
-        gateway.providers.shutdown = AsyncMock()
-        gateway.providers.all.return_value = {}
+        old_providers = MagicMock(spec=ProviderRegistry)
+        old_providers.shutdown = AsyncMock()
+        old_providers.all.return_value = {}
+        gateway.providers = old_providers
 
         with patch.object(ProviderRegistry, "initialize", new_callable=AsyncMock):
             await gateway.reload_config()
 
         assert isinstance(gateway.executor, Executor)
+        old_providers.shutdown.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reload_config_keeps_existing_state_when_new_config_invalid(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19051)
+        old_providers = MagicMock(spec=ProviderRegistry)
+        old_providers.shutdown = AsyncMock()
+        old_providers.all.return_value = {}
+        gateway.providers = old_providers
+        old_executor = gateway.executor
+        old_history = gateway.history
+
+        config_file.write_text('{"providers": {"bad": {"type": "tavily", "api_key": "x"}}}')
+
+        with pytest.raises(Exception):
+            await gateway.reload_config()
+
+        assert gateway.providers is old_providers
+        assert gateway.executor is old_executor
+        assert gateway.history is old_history
+        old_providers.shutdown.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reload_config_keeps_existing_state_when_new_init_fails(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19052)
+        old_providers = MagicMock(spec=ProviderRegistry)
+        old_providers.shutdown = AsyncMock()
+        old_providers.all.return_value = {}
+        gateway.providers = old_providers
+        old_executor = gateway.executor
+        old_history = gateway.history
+
+        new_providers = MagicMock(spec=ProviderRegistry)
+        new_providers.initialize = AsyncMock(side_effect=RuntimeError("init failed"))
+        new_providers.shutdown = AsyncMock()
+
+        with patch("sg.server.gateway.ProviderRegistry", return_value=new_providers):
+            with pytest.raises(RuntimeError, match="init failed"):
+                await gateway.reload_config()
+
+        assert gateway.providers is old_providers
+        assert gateway.executor is old_executor
+        assert gateway.history is old_history
+        old_providers.shutdown.assert_not_called()
+        new_providers.shutdown.assert_called_once()

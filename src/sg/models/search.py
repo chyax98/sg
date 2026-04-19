@@ -48,6 +48,7 @@ class SearchResponse(BaseModel):
     total: int
     latency_ms: float
     result_file: str | None = None  # path to history file, set after recording
+    error: str | None = None
 
 
 class ExtractRequest(BaseModel):
@@ -123,3 +124,4 @@ class HistoryEntry(BaseModel):
     operation: str = "search"  # search, extract, research
     results: list[SearchResult] | None = None
     files: list[dict] | None = None  # for extract: per-URL file manifest
+    content: str | None = None  # for research and other plain-text history entries

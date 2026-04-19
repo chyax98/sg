@@ -46,6 +46,7 @@ class ProviderInstanceConfig(StrictConfigModel):
     url: str | None = None
     timeout: int | None = None
     priority: int = 10
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 class ProviderConfig(StrictConfigModel):

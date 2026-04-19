@@ -97,7 +97,10 @@ class Gateway:
             return await p.search(request)
 
         response: SearchResponse = await self.executor.execute(
-            "search", op, provider=provider, spread_index=spread_index,
+            "search",
+            op,
+            provider=provider,
+            spread_index=spread_index,
         )
         result_file = await self.history.record(request, response)
         response.result_file = result_file
@@ -113,8 +116,13 @@ class Gateway:
         """Execute multiple searches in parallel, spread across providers."""
         logger.info(f"Executing batch search: {len(queries)} queries")
         tasks = [
-            self.search(q, provider=provider, max_results=max_results,
-                        spread_index=i if provider is None else None, **kwargs)
+            self.search(
+                q,
+                provider=provider,
+                max_results=max_results,
+                spread_index=i if provider is None else None,
+                **kwargs,
+            )
             for i, q in enumerate(queries)
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -123,13 +131,68 @@ class Gateway:
         for i, r in enumerate(raw_results):
             if isinstance(r, Exception):
                 logger.error(f"Batch search query '{queries[i]}' failed: {r}")
+                results.append(
+                    SearchResponse(
+                        query=queries[i],
+                        provider=provider or "",
+                        results=[],
+                        total=0,
+                        latency_ms=0.0,
+                        error=str(r),
+                    )
+                )
             else:
                 results.append(r)
 
-        logger.info(f"Batch search completed: {len(results)}/{len(queries)} succeeded")
+        success_count = sum(1 for result in results if not result.error)
+        logger.info(f"Batch search completed: {success_count}/{len(queries)} succeeded")
         return results
 
-    async def extract(self, urls: list[str], provider: str | None = None, **kwargs) -> ExtractResponse:
+    @staticmethod
+    def _normalize_extract_results(
+        urls: list[str], results: list[ExtractResult]
+    ) -> list[ExtractResult]:
+        """Align provider extract results to requested URLs.
+
+        Some batch extract providers may reorder results or omit failed URLs entirely.
+        Normalize the response so downstream history/result-file generation always has one
+        entry per requested URL in request order.
+        """
+        aligned: list[ExtractResult | None] = [None] * len(urls)
+        used = [False] * len(results)
+
+        for idx, url in enumerate(urls):
+            for result_idx, result in enumerate(results):
+                if used[result_idx]:
+                    continue
+                if result.url == url:
+                    aligned[idx] = result
+                    used[result_idx] = True
+                    break
+
+        remaining_results = [
+            result for result_idx, result in enumerate(results) if not used[result_idx]
+        ]
+        remaining_positions = [idx for idx, result in enumerate(aligned) if result is None]
+
+        if remaining_results and len(remaining_results) == len(remaining_positions):
+            for idx, result in zip(remaining_positions, remaining_results, strict=False):
+                aligned[idx] = result.model_copy(update={"url": urls[idx]})
+
+        return [
+            result
+            if result is not None
+            else ExtractResult(
+                url=urls[idx],
+                content="",
+                error="provider returned no extract result",
+            )
+            for idx, result in enumerate(aligned)
+        ]
+
+    async def extract(
+        self, urls: list[str], provider: str | None = None, **kwargs
+    ) -> ExtractResponse:
         """Extract content with failover. Multiple URLs spread across providers when beneficial."""
         # Only spread when there are multiple extract providers available
         # Otherwise use batch API (single provider can batch URLs more efficiently)
@@ -150,7 +213,9 @@ class Gateway:
                     return await p.extract(request)
 
                 return await self.executor.execute(
-                    "extract", op, spread_index=idx,
+                    "extract",
+                    op,
+                    spread_index=idx,
                 )
 
             tasks = [_extract_one(url, i) for i, url in enumerate(urls)]
@@ -185,6 +250,8 @@ class Gateway:
 
             response = await self.executor.execute("extract", op, provider=provider)
 
+        response.results = self._normalize_extract_results(urls, response.results)
+
         # Save each URL as a separate file with line wrapping
         file_manifest = await self.history.record_extract(
             urls=urls,
@@ -195,7 +262,9 @@ class Gateway:
         response.result_files = file_manifest
         return response
 
-    async def research(self, topic: str, depth: str = "auto", provider: str | None = None) -> ResearchResponse:
+    async def research(
+        self, topic: str, depth: str = "auto", provider: str | None = None
+    ) -> ResearchResponse:
         """Deep research with failover."""
         request = ResearchRequest(topic=topic, depth=depth)
 
@@ -205,14 +274,14 @@ class Gateway:
             return await p.research(request)
 
         response: ResearchResponse = await self.executor.execute("research", op, provider=provider)
-        
+
         # Save to history file
         result_file = await self.history.record_content(
             operation="research",
             query=topic,
             provider=response.provider,
             latency_ms=response.latency_ms,
-            content=response.content
+            content=response.content,
         )
         response.result_file = result_file
         return response
@@ -250,12 +319,23 @@ class Gateway:
     async def reload_config(self) -> None:
         """Reload config and reinitialize everything."""
         logger.info("Reloading configuration...")
-        await self.providers.shutdown()
 
-        self.config = GatewayConfig.load(self.config_path)
-        self.providers = ProviderRegistry(self.config.providers)
-        self.executor = Executor(self.config.executor, self.providers)
-        self.history = SearchHistory(self.config.history)
+        new_config = GatewayConfig.load(self.config_path)
+        new_providers = ProviderRegistry(new_config.providers)
+        new_executor = Executor(new_config.executor, new_providers)
+        new_history = SearchHistory(new_config.history)
 
-        await self.providers.initialize()
+        try:
+            await new_providers.initialize()
+        except Exception:
+            await new_providers.shutdown()
+            raise
+
+        old_providers = self.providers
+        self.config = new_config
+        self.providers = new_providers
+        self.executor = new_executor
+        self.history = new_history
+
+        await old_providers.shutdown()
         logger.info("Configuration reloaded")
