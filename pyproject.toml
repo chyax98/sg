@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-sg = "sg._entry:main"
+search-gateway = "sg._entry:main"
 
 [build-system]
 requires = ["hatchling"]

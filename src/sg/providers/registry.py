@@ -90,6 +90,7 @@ class ProviderRegistry:
                         url=instance_cfg.url,
                         priority=instance_cfg.priority,
                         timeout=instance_cfg.timeout or group_cfg.defaults.timeout,
+                        env=instance_cfg.env,
                     )
                     if await provider.initialize():
                         self._providers[instance_cfg.id] = provider

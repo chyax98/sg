@@ -218,7 +218,10 @@ class TestExecuteBasic:
         async def op(provider):
             return await provider.search(SearchRequest(query="test"))
 
-        with pytest.raises(RuntimeError, match="All providers failed"):
+        with pytest.raises(
+            RuntimeError,
+            match="All providers failed for 'search'. primary-1: primary-1 failed; secondary-1: secondary-1 failed",
+        ):
             await executor.execute("search", op)
 
     @pytest.mark.asyncio
@@ -545,6 +548,7 @@ class TestSpreadIndex:
         executor = Executor(_make_config(), registry)
 
         for idx in range(3):
+
             async def op(provider, _idx=idx):
                 attempted_providers[_idx] = provider.name
                 return await provider.search(SearchRequest(query=f"query-{_idx}"))
@@ -599,6 +603,7 @@ class TestSpreadIndex:
         async def do_query(idx):
             async def op(provider):
                 return await provider.search(SearchRequest(query=f"q{idx}"))
+
             return await executor.execute("search", op, spread_index=idx)
 
         # Fire 4 queries: idx 0,1,2,3 → with 2 groups, should alternate

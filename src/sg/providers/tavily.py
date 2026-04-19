@@ -1,6 +1,5 @@
 """Tavily provider — uses official tavily-python SDK."""
 
-import os
 import time
 
 from ..models.search import (
@@ -34,7 +33,7 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
         self._client = None
 
     async def initialize(self) -> bool:
-        api_key = self.api_key or os.environ.get("TAVILY_API_KEY")
+        api_key = self.api_key or self.env_value("TAVILY_API_KEY")
         if not api_key:
             return False
         from tavily import AsyncTavilyClient

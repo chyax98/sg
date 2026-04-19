@@ -31,9 +31,10 @@ def history(tmp_path):
 # Simulates a real extracted web page (~100k chars)
 _LARGE_MARKDOWN = (
     "# Gemini CLI Configuration Guide\n\n"
-    + "This is a comprehensive guide to configuring the Gemini CLI. " * 200 + "\n\n"  # ~12k chars
+    + "This is a comprehensive guide to configuring the Gemini CLI. " * 200
+    + "\n\n"  # ~12k chars
     + "## Installation\n\n"
-    + "```bash\npip install gemini-cli\nexport GEMINI_API_KEY=\"your-key-here\"\ngemini --version\n```\n\n"
+    + '```bash\npip install gemini-cli\nexport GEMINI_API_KEY="your-key-here"\ngemini --version\n```\n\n'
     + "## Configuration Layers\n\n"
     + "| Layer | Location | Precedence |\n"
     + "| --- | --- | --- |\n"
@@ -45,18 +46,25 @@ _LARGE_MARKDOWN = (
     + "## Environment Variables\n\n"
     + "The following environment variables are supported:\n\n"
     + "- `GEMINI_API_KEY`: Your API key for authentication. This is required for all operations. "
-      "Without this key, the CLI will fail to initialize and display an error message. " * 20 + "\n"
+    "Without this key, the CLI will fail to initialize and display an error message. "
+    * 20
+    + "\n"
     + "- `GEMINI_MODEL`: Override the default model. Accepts values like `gemini-2.5-pro`, `gemini-2.5-flash`. "
-      "When set, this takes precedence over any model specified in settings.json files. " * 20 + "\n\n"
+    "When set, this takes precedence over any model specified in settings.json files. "
+    * 20
+    + "\n\n"
     + "## MCP Server Configuration\n\n"
     + '```json\n{\n  "mcpServers": {\n    "sg": {\n      "command": "uv",\n'
     + '      "args": ["run", "--directory", "/path/to/search-gateway", "sg", "mcp"],\n'
     + '      "env": {"SG_PORT": "8100"}\n    }\n  }\n}\n```\n\n'
     + "## Advanced Settings\n\n"
     + "For advanced users, the following settings are available in `settings.json`:\n\n"
-    + ("- `advanced.dnsResolutionOrder`: Controls DNS resolution order for network requests. "
-       "This can be useful when running in environments with specific DNS requirements. "
-       "Accepts 'ipv4', 'ipv6', or 'auto'. Default is 'auto'. " * 5 + "\n") * 10
+    + (
+        "- `advanced.dnsResolutionOrder`: Controls DNS resolution order for network requests. "
+        "This can be useful when running in environments with specific DNS requirements. "
+        "Accepts 'ipv4', 'ipv6', or 'auto'. Default is 'auto'. " * 5 + "\n"
+    )
+    * 10
 )
 
 _LONG_URL = "https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/config/extensions/variables.ts#L17-L40"
@@ -65,6 +73,7 @@ _LONG_URL = "https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/
 # ============================================================
 # _wrap_content: content integrity on real data
 # ============================================================
+
 
 class TestWrapContentIntegrity:
     """Does wrapping preserve ALL content? This is the #1 concern."""
@@ -119,7 +128,9 @@ class TestWrapContentIntegrity:
         for i, line in enumerate(wrapped.split("\n"), 1):
             # Allow lines with unbreakable tokens (URLs, code) to exceed slightly
             if len(line) > 220 and " " in line:
-                pytest.fail(f"Line {i} is {len(line)} chars and has spaces (should have wrapped): {line[:80]}...")
+                pytest.fail(
+                    f"Line {i} is {len(line)} chars and has spaces (should have wrapped): {line[:80]}..."
+                )
 
     def test_empty_and_whitespace_preserved(self):
         """Blank lines in markdown are paragraph separators — must not be collapsed."""
@@ -131,6 +142,7 @@ class TestWrapContentIntegrity:
 # ============================================================
 # record_extract: real-world file format for AI consumption
 # ============================================================
+
 
 class TestRecordExtractRealWorld:
     """Test that files produced by record_extract are actually useful for AI agents."""
@@ -162,7 +174,9 @@ class TestRecordExtractRealWorld:
         total_lines = len(all_lines)
 
         # File should have many lines (not a single giant line!)
-        assert total_lines > 50, f"Only {total_lines} lines for {len(_LARGE_MARKDOWN)} chars — not enough granularity"
+        assert total_lines > 50, (
+            f"Only {total_lines} lines for {len(_LARGE_MARKDOWN)} chars — not enough granularity"
+        )
 
         # HEADER: first 3 lines = URL, Title, separator
         assert all_lines[0] == "URL: https://docs.example.com/gemini-cli/configuration"
@@ -181,7 +195,12 @@ class TestRecordExtractRealWorld:
 
         # INTEGRITY: all content must be in the file
         full_body = "\n".join(all_lines[3:])
-        for keyword in ["Configuration Layers", "Environment Variables", "MCP Server", "Advanced Settings"]:
+        for keyword in [
+            "Configuration Layers",
+            "Environment Variables",
+            "MCP Server",
+            "Advanced Settings",
+        ]:
             assert keyword in full_body, f"Section '{keyword}' missing from file"
 
     @pytest.mark.asyncio
@@ -204,7 +223,9 @@ class TestRecordExtractRealWorld:
         """Error results should be small, not a full content file."""
         results = [
             ExtractResult(url="https://ok.com", content="Good content " * 100, title="OK"),
-            ExtractResult(url="https://timeout.com", content="", error="Connection timeout after 30s"),
+            ExtractResult(
+                url="https://timeout.com", content="", error="Connection timeout after 30s"
+            ),
         ]
 
         manifest = await history.record_extract(
@@ -228,6 +249,7 @@ class TestRecordExtractRealWorld:
 # ============================================================
 # Concurrent record_extract: the real danger zone
 # ============================================================
+
 
 class TestRecordExtractConcurrency:
     """Multiple extract requests hitting record_extract simultaneously."""
@@ -275,7 +297,9 @@ class TestRecordExtractConcurrency:
                 ExtractResult(url=u, content=f"Content-{prefix}{i} " * 200, title=f"P-{prefix}{i}")
                 for i, u in enumerate(urls)
             ]
-            return await history.record_extract(urls=urls, results=results, provider="jina", latency_ms=200.0)
+            return await history.record_extract(
+                urls=urls, results=results, provider="jina", latency_ms=200.0
+            )
 
         m_a, m_b = await asyncio.gather(
             batch_extract("a"),
@@ -299,13 +323,16 @@ class TestRecordExtractConcurrency:
 # Search JSONL format (existing, kept for regression)
 # ============================================================
 
+
 class TestSearchJSONL:
     def test_format_roundtrip(self):
         response = SearchResponse(
             query="test",
             provider="exa",
             results=[
-                SearchResult(title="R1", url="https://a.com", content="C1\nLine2", source="exa", score=0.95),
+                SearchResult(
+                    title="R1", url="https://a.com", content="C1\nLine2", source="exa", score=0.95
+                ),
                 SearchResult(title="R2", url="https://b.com", content="C2", source="exa"),
             ],
             total=2,
@@ -328,7 +355,12 @@ class TestSearchJSONL:
             query="gemini cli config",
             provider="exa",
             results=[
-                SearchResult(title="Config Guide", url="https://docs.com/config", content="Config docs...", source="exa"),
+                SearchResult(
+                    title="Config Guide",
+                    url="https://docs.com/config",
+                    content="Config docs...",
+                    source="exa",
+                ),
             ],
             total=1,
             latency_ms=200.0,
@@ -351,9 +383,11 @@ class TestSearchJSONL:
     @pytest.mark.asyncio
     async def test_clear_removes_all(self, history):
         response = SearchResponse(
-            query="test", provider="exa",
+            query="test",
+            provider="exa",
             results=[SearchResult(title="R", url="https://x.com", content="c", source="exa")],
-            total=1, latency_ms=10.0,
+            total=1,
+            latency_ms=10.0,
         )
         await history.record(SearchRequest(query="test"), response)
         await history.record(SearchRequest(query="test2"), response)
@@ -364,10 +398,19 @@ class TestSearchJSONL:
         entries = await history.list()
         assert len(entries) == 0
 
+    @pytest.mark.asyncio
+    async def test_get_missing_entry_returns_none(self, history):
+        assert await history.get("missing-entry") is None
+
+    @pytest.mark.asyncio
+    async def test_clear_empty_history_returns_zero(self, history):
+        assert await history.clear() == 0
+
 
 # ============================================================
 # record_content (research) — wrapped plain text
 # ============================================================
+
 
 class TestRecordContent:
     @pytest.mark.asyncio
@@ -404,3 +447,26 @@ class TestRecordContent:
         assert "# AI Trends 2026" in text
         assert "## Key Findings" in text
         assert "LLM costs have dropped 90%" in text
+
+    @pytest.mark.asyncio
+    async def test_research_record_and_get_roundtrip(self, history):
+        content = "# Report\n\nLine 1\nLine 2\n"
+
+        await history.record_content(
+            operation="research",
+            query="AI trends 2026",
+            provider="tavily",
+            latency_ms=15000.0,
+            content=content,
+        )
+
+        entries = await history.list()
+        assert len(entries) == 1
+        assert entries[0].operation == "research"
+
+        full = await history.get(entries[0].id)
+        assert full is not None
+        assert full.operation == "research"
+        assert full.content is not None
+        assert "# Report" in full.content
+        assert full.results is None

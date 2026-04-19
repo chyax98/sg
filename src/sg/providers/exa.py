@@ -1,6 +1,5 @@
 """Exa provider — uses official exa-py SDK."""
 
-import os
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -34,11 +33,11 @@ class ExaProvider(SearchProvider, ExtractProvider):
 
     async def initialize(self) -> bool:
         api_key = (
-            self.api_key or os.environ.get("EXA_API_KEY") or os.environ.get("EXA_POOL_API_KEY")
+            self.api_key or self.env_value("EXA_API_KEY") or self.env_value("EXA_POOL_API_KEY")
         )
         if not api_key:
             return False
-        api_base = self.url or os.environ.get("EXA_POOL_BASE_URL")
+        api_base = self.url or self.env_value("EXA_POOL_BASE_URL")
         from exa_py import AsyncExa
 
         if api_base:

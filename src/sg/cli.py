@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 import click
+import httpx
 
+from ._agent_output import format_extract_output, format_research_output, format_search_output
 from ._utils import ensure_gateway_running
 
 
@@ -14,6 +16,42 @@ from ._utils import ensure_gateway_running
 def cli():
     """Search Gateway — unified search with failover."""
     pass
+
+
+def _ensure_gateway_or_exit(port: int, config: str | None = None) -> None:
+    try:
+        ensure_gateway_running(port, config)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+def _extract_http_error_detail(error: httpx.HTTPStatusError) -> str:
+    try:
+        payload = error.response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict) and payload.get("detail"):
+        return str(payload["detail"])
+
+    text = error.response.text.strip()
+    if text:
+        return text
+
+    return f"HTTP {error.response.status_code}"
+
+
+def _exit_for_request_error(error: Exception) -> None:
+    if isinstance(error, httpx.ConnectError):
+        click.echo("Error: Gateway not running. Start with 'search-gateway start'", err=True)
+    elif isinstance(error, httpx.HTTPStatusError):
+        click.echo(f"Error: {_extract_http_error_detail(error)}", err=True)
+    elif isinstance(error, httpx.HTTPError):
+        click.echo(f"Error: {error}", err=True)
+    else:
+        click.echo(f"Error: {error}", err=True)
+    sys.exit(1)
 
 
 @cli.command()
@@ -86,7 +124,9 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
                 click.echo("\n✓ Gateway started successfully!")
                 click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
                 click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-                click.echo("\n  Commands:  sg status | sg stop | sg web")
+                click.echo(
+                    "\n  Commands:  search-gateway status | search-gateway stop | search-gateway web"
+                )
                 click.echo(f"  Logs:      tail -f {log_file}\n")
             else:
                 click.echo(
@@ -116,7 +156,9 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
-        click.echo("\n  Commands:  sg search 'query' | sg status | sg stop\n")
+        click.echo(
+            "\n  Commands:  search-gateway search 'query' | search-gateway status | search-gateway stop\n"
+        )
         await gateway.wait_shutdown()
 
     try:
@@ -154,45 +196,16 @@ def mcp(port: int, config: str | None):
 @click.option("--port", "-p", default=8100, help="Gateway port")
 def stop(port: int):
     """Stop the gateway server."""
-    import httpx
-
     try:
-        httpx.post(f"http://127.0.0.1:{port}/shutdown", timeout=5.0)
+        httpx.post(f"http://127.0.0.1:{port}/shutdown", timeout=5.0).raise_for_status()
         click.echo("Gateway stopped.")
     except Exception as e:
-        click.echo(f"Failed to stop gateway: {e}", err=True)
+        _exit_for_request_error(e)
 
 
 def _print_result_file(data: dict) -> None:
     """Print result as TOON format for LLM consumption."""
-    query = data.get("query", "")
-    result_file = data.get("result_file", "")
-    results = data.get("results", [])
-    total = data.get("total", 0)
-
-    click.echo(f"query: {query}")
-    if result_file:
-        click.echo(f"Hint: 详细结果存到了 {result_file}，请务必读取该文件获取完整的搜索结果！")
-    click.echo("")
-
-    preview_count = min(len(results), 5)
-    click.echo(f"results[{preview_count}]{{line,title,url,score}}:")
-    for i, r in enumerate(results[:preview_count], 1):
-        score = r.get("score", 0)
-        score_str = f"{score:.2f}" if score else "-"
-        title = r.get("title", "")[:50]
-        if len(r.get("title", "")) > 50:
-            title += "..."
-        url = r.get("url", "")
-        # line=i means read line i from the file
-        click.echo(f"  {i},{title},{url},{score_str}")
-
-    if total > preview_count:
-        click.echo(f"  ... ({total - preview_count} more)")
-
-    click.echo("")
-    click.echo("To read specific results, read file lines:")
-    click.echo("  Line 1 = result [1], Line 2 = result [2], etc.")
+    click.echo(format_search_output(data))
 
 
 @cli.command()
@@ -229,10 +242,8 @@ def search(
     config: str | None,
 ):
     """Execute one or more search queries. Prints result file path(s)."""
-    import httpx
-
     # Ensure gateway is running, start if needed
-    ensure_gateway_running(port, config)
+    _ensure_gateway_or_exit(port, config)
 
     import json
 
@@ -274,12 +285,8 @@ def search(
             for data in resp.json():
                 _print_result_file(data)
 
-    except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -300,10 +307,8 @@ def extract(
     config: str | None,
 ):
     """Extract content from URLs."""
-    import httpx
-
     # Ensure gateway is running, start if needed
-    ensure_gateway_running(port, config)
+    _ensure_gateway_or_exit(port, config)
     try:
         import json
 
@@ -322,35 +327,10 @@ def extract(
         )
         resp.raise_for_status()
         data = resp.json()
+        click.echo(format_extract_output(data))
 
-        result_files = data.get("result_files")
-        if result_files:
-            for f in result_files:
-                if f.get("error"):
-                    click.echo(f"error: {f['error']} | {f.get('url', '')}")
-                else:
-                    title = f.get("title") or ""
-                    click.echo(
-                        f"file:{f.get('file', '')} | {f.get('chars', 0)}c {f.get('lines', 0)}L | {title}"
-                    )
-                    click.echo(f"  {f.get('url', '')}")
-        else:
-            for r in data.get("results", []):
-                if r.get("error"):
-                    click.echo(f"error: {r['error']} | {r.get('url', '')}")
-                else:
-                    click.echo(f"URL: {r['url']}")
-                    if r.get("title"):
-                        click.echo(f"Title: {r['title']}")
-                    length = len(r.get("content", ""))
-                    click.echo(f"Status: Success ({length} chars)")
-
-    except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -360,12 +340,8 @@ def extract(
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def research(topic: str, depth: str, port: int, config: str | None):
     """Execute deep research on a topic."""
-    import httpx
-
     # Ensure gateway is running, start if needed
-    ensure_gateway_running(port, config)
-
-    click.echo(f"Researching: {topic} (depth: {depth})...")
+    _ensure_gateway_or_exit(port, config)
 
     try:
         resp = httpx.post(
@@ -375,22 +351,10 @@ def research(topic: str, depth: str, port: int, config: str | None):
         )
         resp.raise_for_status()
         data = resp.json()
-        result_file = data.get("result_file", "")
-        
-        if result_file:
-            click.echo(f"Hint: 深度研究报告已存入 {result_file}，请读取该文件第 1 行获取完整 JSON 报告！")
-        click.echo("")
-        
-        content = data.get("content", "")
-        click.echo("Preview:")
-        click.echo(content[:1000] + ("\n\n...(truncated)..." if len(content) > 1000 else ""))
+        click.echo(format_research_output(data))
 
-    except httpx.ConnectError:
-        click.echo("Error: Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -398,10 +362,8 @@ def research(topic: str, depth: str, port: int, config: str | None):
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def status(port: int, config: str | None):
     """Show gateway status."""
-    import httpx
-
     # Ensure gateway is running, start if needed
-    ensure_gateway_running(port, config)
+    _ensure_gateway_or_exit(port, config)
     try:
         resp = httpx.get(f"http://127.0.0.1:{port}/status", timeout=5.0)
         resp.raise_for_status()
@@ -432,9 +394,8 @@ def status(port: int, config: str | None):
                     f"{m['avg_latency_ms']:.0f}ms avg{cb}{extra}"
                 )
 
-    except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
+    except Exception as e:
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -442,10 +403,8 @@ def status(port: int, config: str | None):
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def providers(port: int, config: str | None):
     """List available providers."""
-    import httpx
-
     # Ensure gateway is running, start if needed
-    ensure_gateway_running(port, config)
+    _ensure_gateway_or_exit(port, config)
     try:
         resp = httpx.get(f"http://127.0.0.1:{port}/providers", timeout=5.0)
         resp.raise_for_status()
@@ -474,17 +433,14 @@ def providers(port: int, config: str | None):
                 click.echo(f"      Last failure: {p['last_failure_type']}")
             click.echo()
 
-    except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
+    except Exception as e:
+        _exit_for_request_error(e)
 
 
 @cli.command()
 @click.option("--port", default=8100, help="Gateway port")
 def health(port: int):
     """Run health check on all providers."""
-    import httpx
-
     try:
         resp = httpx.post(f"http://127.0.0.1:{port}/health-check", timeout=30.0)
         resp.raise_for_status()
@@ -497,9 +453,8 @@ def health(port: int):
         ]
         click.echo(f"  Unhealthy: {', '.join(unhealthy_names) or 'None'}")
 
-    except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
+    except Exception as e:
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -509,8 +464,6 @@ def health(port: int):
 @click.option("--port", default=8100, help="Gateway port")
 def history(entry_id: str | None, clear: bool, limit: int, port: int):
     """Show search history."""
-    import httpx
-
     try:
         if clear:
             resp = httpx.delete(f"http://127.0.0.1:{port}/api/history", timeout=5.0)
@@ -533,6 +486,8 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
                     if r.get("content"):
                         click.echo(f"      {r['content'][:150]}...")
                     click.echo()
+            elif data.get("content"):
+                click.echo(data["content"])
             return
 
         resp = httpx.get(
@@ -551,14 +506,10 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
         for e in entries:
             ts = e["timestamp"][:19].replace("T", " ")
             click.echo(f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)")
-        click.echo("\nUse 'sg history <id>' to see full results.")
+        click.echo("\nUse 'search-gateway history <id>' to see full results.")
 
-    except httpx.ConnectError:
-        click.echo("Gateway not running. Start with 'sg start'", err=True)
-        sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_for_request_error(e)
 
 
 @cli.command()
@@ -598,17 +549,17 @@ def init(config: str | None):
     click.echo(f"\n✓ Created config: {config_path}")
     click.echo("\nDefault provider: DuckDuckGo (free, no API key required)")
     click.echo("\nTo add more providers, edit the config file or use the Web UI:")
-    click.echo("  sg start && sg web")
+    click.echo("  search-gateway start && search-gateway web")
     click.echo("\nAvailable providers:")
     click.echo("  - Tavily (search, extract, research) - requires API key")
     click.echo("  - Exa (search, extract) - requires API key")
     click.echo("  - Brave (search) - requires API key")
-    click.echo("  - You.com (search) - requires API key")
+    click.echo("  - You.com (search, extract) - requires API key")
     click.echo("  - Firecrawl (extract) - requires API key")
     click.echo("  - Jina (extract) - free, no API key")
     click.echo("  - SearXNG (search) - requires self-hosted instance")
     click.echo("\nTest your setup:")
-    click.echo("  sg search 'test query'")
+    click.echo("  search-gateway search 'test query'")
 
 
 @cli.command()
@@ -648,7 +599,9 @@ def setup(copy: bool):
                 click.echo("Prompt copied to clipboard. Paste it to your AI agent to start setup.")
             except FileNotFoundError:
                 click.echo("Error: no clipboard tool found (pbcopy/xclip)", err=True)
-                click.echo("Use 'sg setup' without --copy to print the prompt.", err=True)
+                click.echo(
+                    "Use 'search-gateway setup' without --copy to print the prompt.", err=True
+                )
                 sys.exit(1)
     else:
         click.echo(prompt)
@@ -668,6 +621,81 @@ def _find_prompt(name: str) -> Path | None:
             return installed_path
 
     return None
+
+
+_SKILL_MD = """---
+name: search-gateway
+description: >
+  Use when the user needs web search, latest information, webpage content extraction, or deep research.
+  Triggers on "搜索一下", "查一下", "最新", "提取网页", "深度研究", "search for", "look up", "extract URL".
+---
+
+# Search Gateway
+
+## 执行检查点
+
+- [ ] 结果包含 `file:` 路径时，**必须读取该文件**获取完整内容
+- [ ] 不要主动指定 `-p provider`，让自动故障转移工作
+- [ ] 如果命令报错网关未启动，重试一次（CLI 会自动后台启动）
+
+## 核心命令
+
+| 场景 | 命令 |
+|------|------|
+| 搜索 | `search-gateway search "query"` |
+| 批量搜索 | `search-gateway search "q1" "q2" "q3"` |
+| 限制结果数 | `search-gateway search "query" -n 10` |
+| 按时间过滤 | `search-gateway search "query" --time-range week` |
+| 限定域名 | `search-gateway search "query" --include-domain github.com` |
+| 排除域名 | `search-gateway search "query" --exclude-domain medium.com` |
+| 提取网页 | `search-gateway extract "https://example.com"` |
+| 深度研究 | `search-gateway research "topic"` |
+| 更深入研究 | `search-gateway research "topic" -d pro` |
+| 查看状态 | `search-gateway status` |
+
+## Known Gotchas
+
+- **不读文件 = 丢失结果**：`search-gateway search` 和 `research` 的完整结果通常在返回的文件路径中，stdout 只是预览。看到 `file:` 或 `next: read_file` 必须执行 ReadFile 读取。
+- **不要手动指定 provider**：自动路由已配置多 provider 故障转移，手动 `-p tavily` 等会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
+- **网关未启动时自动启动**：首次调用可能因后台启动而稍慢，如果收到 "Gateway not running"，等待 3-5 秒后重试即可。
+- **extract 结果也要读文件**：`search-gateway extract` 同样返回文件路径，必须读取文件获取提取内容。
+
+## MCP 集成（可选）
+
+如果当前 AI 工具支持 MCP，可配置原生工具调用：
+- Claude Code: `claude mcp add search-gateway stdio search-gateway mcp`
+"""
+
+
+@cli.group()
+def skill():
+    """Manage AI coding assistant skills."""
+    pass
+
+
+@skill.command(name="install")
+@click.option(
+    "--path",
+    "-p",
+    default=None,
+    help="Skills root directory (default: ~/.agents/skills)",
+)
+def skill_install(path: str | None):
+    """Install Search Gateway skill for AI assistants."""
+    skills_dir = Path(path).expanduser() if path else Path.home() / ".agents" / "skills"
+    target = skills_dir / "search-gateway"
+
+    if not click.confirm(f"Install skill to {target}?"):
+        click.echo("Cancelled.")
+        return
+
+    target.mkdir(parents=True, exist_ok=True)
+    skill_file = target / "SKILL.md"
+    skill_file.write_text(_SKILL_MD, encoding="utf-8")
+
+    click.echo(f"\n✓ Skill installed: {skill_file}")
+    click.echo("\nSupported AI tools will now automatically use search-gateway for web search.")
+    click.echo("\nTip: Restart your AI coding assistant to load the new skill.")
 
 
 if __name__ == "__main__":

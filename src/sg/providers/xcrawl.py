@@ -1,7 +1,6 @@
 """Xcrawl provider — search + web scraping with LLM-friendly output."""
 
 import asyncio
-import os
 import time
 
 import httpx
@@ -45,7 +44,7 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
         self._base_url = self.url or self.DEFAULT_BASE_URL
 
     async def initialize(self) -> bool:
-        api_key = self.api_key or os.environ.get("XCRAWL_API_KEY")
+        api_key = self.api_key or self.env_value("XCRAWL_API_KEY")
         if not api_key:
             return False
         self._client = httpx.AsyncClient(

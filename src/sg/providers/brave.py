@@ -30,7 +30,7 @@ class BraveProvider(SearchProvider):
         self._client: httpx.AsyncClient | None = None
 
     async def initialize(self) -> bool:
-        api_key = self.api_key or os.environ.get("BRAVE_API_KEY")
+        api_key = self.api_key or self.env_value("BRAVE_API_KEY")
         if not api_key:
             return False
         self.api_key = api_key

@@ -40,6 +40,7 @@ def _wrap_content(content: str) -> str:
             out_lines.extend(wrapped.split("\n"))
     return "\n".join(out_lines)
 
+
 def _format_view_content(response: SearchResponse) -> str:
     """Format search results as JSONL - each line is a complete result.
 
@@ -222,14 +223,16 @@ class SearchHistory:
             if r.error:
                 # Error: minimal file
                 content = f"URL: {r.url}\nError: {r.error}\n"
-                file_manifest.append({
-                    "url": r.url,
-                    "title": r.title or "",
-                    "file": str(view_file),
-                    "chars": 0,
-                    "lines": 0,
-                    "error": r.error,
-                })
+                file_manifest.append(
+                    {
+                        "url": r.url,
+                        "title": r.title or "",
+                        "file": str(view_file),
+                        "chars": 0,
+                        "lines": 0,
+                        "error": r.error,
+                    }
+                )
             else:
                 # Header + wrapped content
                 header_lines = [f"URL: {r.url}"]
@@ -242,13 +245,15 @@ class SearchHistory:
 
                 content = "\n".join(header_lines) + "\n" + wrapped_body + "\n"
 
-                file_manifest.append({
-                    "url": r.url,
-                    "title": r.title or "",
-                    "file": str(view_file),
-                    "chars": len(r.content),
-                    "lines": body_line_count,
-                })
+                file_manifest.append(
+                    {
+                        "url": r.url,
+                        "title": r.title or "",
+                        "file": str(view_file),
+                        "chars": len(r.content),
+                        "lines": body_line_count,
+                    }
+                )
 
             try:
                 await asyncio.to_thread(view_file.write_text, content)
@@ -312,12 +317,17 @@ class SearchHistory:
 
     async def get(self, entry_id: str):
         """Get full entry by reading view file (truth source)."""
+        if not self.trace_dir.exists():
+            return None
+
         # Extract pure id from path or id string
         entry_path = Path(entry_id)
         pure_id = entry_path.stem if entry_path.suffix in (".txt", ".json") else entry_id
 
         # Find trace file to get metadata and view_file path
         def _find_trace():
+            if not self.trace_dir.exists():
+                return None
             for month_dir in self.trace_dir.iterdir():
                 if month_dir.is_dir():
                     trace_file = month_dir / f"{pure_id}.json"
@@ -348,12 +358,25 @@ class SearchHistory:
                     files=trace_data["files"],
                 )
             elif "view_file" in trace_data:
-                # Search / research entries: parse JSONL view file
+                # Search entries store JSONL; research stores wrapped plain text.
                 view_file = Path(trace_data["view_file"])
                 if not view_file.exists():
                     return None
 
                 view_text = await asyncio.to_thread(view_file.read_text)
+
+                if operation == "research":
+                    return HistoryEntry(
+                        id=trace_data["id"],
+                        query=trace_data["query"],
+                        provider=trace_data["provider"],
+                        total=trace_data["total"],
+                        latency_ms=trace_data["latency_ms"],
+                        timestamp=trace_data["timestamp"],
+                        operation=operation,
+                        content=view_text,
+                    )
+
                 results = _parse_view_content(view_text, trace_data.get("provider", ""))
 
                 return HistoryEntry(
@@ -377,18 +400,22 @@ class SearchHistory:
 
         def _do_clear():
             nonlocal count
-            for f in self.trace_dir.rglob("*.json"):
-                f.unlink()
-                count += 1
-            for f in self.view_dir.rglob("*.txt"):
-                f.unlink()
-                count += 1
-            for d in sorted(self.trace_dir.iterdir(), reverse=True):
-                if d.is_dir() and not any(d.iterdir()):
-                    d.rmdir()
-            for d in sorted(self.view_dir.iterdir(), reverse=True):
-                if d.is_dir() and not any(d.iterdir()):
-                    d.rmdir()
+            if self.trace_dir.exists():
+                for f in self.trace_dir.rglob("*.json"):
+                    f.unlink()
+                    count += 1
+                for d in sorted(self.trace_dir.iterdir(), reverse=True):
+                    if d.is_dir() and not any(d.iterdir()):
+                        d.rmdir()
+
+            if self.view_dir.exists():
+                for f in self.view_dir.rglob("*.txt"):
+                    f.unlink()
+                    count += 1
+                for d in sorted(self.view_dir.iterdir(), reverse=True):
+                    if d.is_dir() and not any(d.iterdir()):
+                        d.rmdir()
+
             return count
 
         count = await asyncio.to_thread(_do_clear)

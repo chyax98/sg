@@ -1,5 +1,6 @@
 """Provider base classes with self-describing metadata."""
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import ClassVar
@@ -44,6 +45,7 @@ class BaseProvider(ABC):
         url: str | None = None,
         priority: int = 10,
         timeout: int = 30000,
+        env: dict[str, str] | None = None,
         **kwargs,
     ):
         self.name = name
@@ -51,6 +53,10 @@ class BaseProvider(ABC):
         self.url = url
         self.priority = priority
         self.timeout = timeout
+        self.env = env or {}
+
+    def env_value(self, name: str) -> str | None:
+        return self.env.get(name) or os.environ.get(name)
 
     @abstractmethod
     async def initialize(self) -> bool:
