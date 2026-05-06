@@ -10,7 +10,7 @@
 
 ## 特性
 
-- **8 种 Provider**: Tavily, Brave, Exa, You.com, Firecrawl, Jina, SearXNG, DuckDuckGo
+- **10 种 Provider**: Tavily, Brave, Exa, You.com, TinyFish, Firecrawl, Jina, SearXNG, Xcrawl, DuckDuckGo
 - **Provider Group + Instances**: 同一 provider 类型下可配置多个实例，共享通用配置
 - **Circuit Breaker**: 三态断路器（CLOSED/OPEN/HALF_OPEN），自动熔断与恢复
 - **两层路由**: 先选 provider，再在 provider 内选择 instance
@@ -235,7 +235,7 @@ POST /extract
 }
 ```
 
-支持 extract 的 provider：Tavily, Exa, Firecrawl, Jina（免费）。
+支持 extract 的 provider：Tavily, Exa, You.com, TinyFish, Firecrawl, Jina（免费）、Xcrawl。
 
 ### 深度研究
 
@@ -415,13 +415,15 @@ Search Gateway 使用**两层路由架构**：
 
 | Provider | 需要 Key | 免费额度 | 能力 | SDK |
 |----------|---------|----------|------|-----|
-| **You.com** | 是 | 有限 | search | httpx |
+| **You.com** | 是 | 有限 | search, extract | httpx |
+| **TinyFish** | 是 | 按账户计划 | search, extract | httpx |
 | **Tavily** | 是 | 1,000/月 | search, extract, research | tavily-python |
 | **Exa** | 是 | 1,000/月 | search, extract | exa-py |
 | **Firecrawl** | 是 | 500/月 | search, extract | firecrawl-py |
 | **Brave** | 是 | 2,000/月 | search | httpx |
 | **Jina** | 否(extract) | 免费 | extract (search 需 key) | httpx |
 | **SearXNG** | 否 | 无限 | search (需自建) | httpx |
+| **Xcrawl** | 是 | 有限 | search, extract | httpx |
 | **DuckDuckGo** | 否 | 无限 | search (兜底) | ddgs |
 
 ## Circuit Breaker 机制

@@ -1,6 +1,6 @@
 # Provider 文档索引
 
-Search Gateway 支持以下 9 个搜索/提取 Provider：
+Search Gateway 支持以下 10 个搜索/提取 Provider：
 
 | Provider | 能力 | API Key | 官方文档 |
 |---|---|---|---|
@@ -9,6 +9,7 @@ Search Gateway 支持以下 9 个搜索/提取 Provider：
 | [Brave](brave.md) | search | 需要 | [brave.com/search/api](https://brave.com/search/api/) |
 | [DuckDuckGo](duckduckgo.md) | search | 免费 | [github.com/deedy5/ddgs](https://github.com/deedy5/ddgs) |
 | [You.com](youcom.md) | search, extract | 需要 | [documentation.you.com](https://documentation.you.com) |
+| [TinyFish](tinyfish.md) | search, extract | 需要 | [docs.tinyfish.ai](https://docs.tinyfish.ai) |
 | [Firecrawl](firecrawl.md) | search, extract | 需要 | [docs.firecrawl.dev](https://docs.firecrawl.dev) |
 | [Jina](jina.md) | extract (search 需 key) | 免费/付费 | [jina.ai/reader](https://jina.ai/reader/) |
 | [SearXNG](searxng.md) | search | 免费(自建) | [docs.searxng.org](https://docs.searxng.org) |
