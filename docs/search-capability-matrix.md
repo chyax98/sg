@@ -18,7 +18,7 @@ Each provider adapter declares the subset it supports through `ProviderInfo.sear
 `include_domains` / `exclude_domains`
 
 - Native support: `tavily`, `exa`
-- Query-operator based support in this gateway: `brave`, `youcom`, `firecrawl`
+- Query-operator based support in this gateway: `brave`, `youcom`, `firecrawl`, `tinyfish`
 - Not exposed as supported: `duckduckgo`, `jina`, `searxng`
 
 `time_range`

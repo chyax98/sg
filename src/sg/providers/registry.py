@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import random
-import threading
 from collections.abc import Callable
 
 from ..models.config import InstanceSelection, ProviderConfig, ProviderInstanceConfig
@@ -24,6 +23,7 @@ def _register_builtins():
     from .jina import JinaReaderProvider
     from .searxng import SearXNGProvider
     from .tavily import TavilyProvider
+    from .tinyfish import TinyFishProvider
     from .xcrawl import XcrawlProvider
     from .youcom import YouComProvider
 
@@ -35,6 +35,7 @@ def _register_builtins():
         SearXNGProvider,
         JinaReaderProvider,
         FirecrawlProvider,
+        TinyFishProvider,
         YouComProvider,
         XcrawlProvider,
     ):
