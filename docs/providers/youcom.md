@@ -8,7 +8,7 @@
 |---|---|
 | 类型 | `youcom` |
 | 能力 | search, extract |
-| API Key | 需要 (`YOUCOM_API_KEY`) |
+| API Key | 需要 (`YDC_API_KEY`，旧变量 `YOUCOM_API_KEY` 仍兼容) |
 | 官方文档 | https://documentation.you.com |
 | Python SDK | `youdotcom` |
 | API Key 申请 | https://you.com |
