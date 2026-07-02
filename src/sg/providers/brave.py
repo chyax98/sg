@@ -1,6 +1,5 @@
 """Brave Search provider — raw httpx (no official SDK)."""
 
-import os
 import time
 from typing import Any
 

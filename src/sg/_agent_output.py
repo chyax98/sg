@@ -8,104 +8,100 @@ def _inline(value: Any) -> str:
     return text.replace("\n", " ").strip()
 
 
-def _truncate(text: str, limit: int = 50) -> str:
-    text = _inline(text)
-    return text if len(text) <= limit else text[:limit] + "..."
-
-
-def format_search_output(result: dict[str, Any], max_preview: int = 5) -> str:
-    """Format search results for predictable agent parsing."""
+def format_search_output(result: dict[str, Any], *, for_mcp: bool = False) -> str:
+    """Inline all search hits (title, url, snippet). No file pointer."""
     query = result.get("query", "")
-    result_file = result.get("result_file", "")
     results = result.get("results", []) or []
     total = result.get("total", len(results))
     error = result.get("error")
+    provider = result.get("provider", "")
 
     lines = ["type: search", f"query: {query}"]
+    if provider:
+        lines.append(f"provider: {provider}")
     if error:
         lines.append(f"error: {_inline(error)}")
         return "\n".join(lines)
 
-    if result_file:
-        lines.append(f"file: {result_file}")
-        lines.append("next: read_file")
-
-    preview_count = min(len(results), max_preview)
-    lines.append("")
-    lines.append(f"preview[{preview_count}]{{line,title,url,score}}:")
-
-    for i, item in enumerate(results[:preview_count], 1):
-        score = item.get("score")
-        score_str = f"{score:.2f}" if score else "-"
+    lines.append(f"total: {total}")
+    if for_mcp:
         lines.append(
-            f"  {i},{_truncate(item.get('title', ''))},{_inline(item.get('url', ''))},{score_str}"
+            "note: Answer from the snippets below. Do not call extract on these URLs unless the user needs full page text."
         )
+    lines.append("")
 
-    if total > preview_count:
-        lines.append(f"  ... ({total - preview_count} more)")
-
-    if result_file:
+    for i, item in enumerate(results, 1):
+        body = (item.get("content") or item.get("snippet") or "").strip()
+        lines.append(f"--- result {i} ---")
+        lines.append(f"title: {item.get('title', '')}")
+        lines.append(f"url: {item.get('url', '')}")
+        if item.get("published_date"):
+            lines.append(f"published: {item.get('published_date')}")
+        if item.get("score"):
+            lines.append(f"score: {item.get('score')}")
+        lines.append("snippet:")
+        lines.append(body if body else "(empty)")
         lines.append("")
-        lines.append("note: file line number equals result index")
 
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
 def format_extract_output(result: dict[str, Any]) -> str:
-    """Format extract results for predictable agent parsing."""
-    result_files = result.get("result_files", []) or []
+    """Inline extracted page content per URL."""
     raw_results = result.get("results", []) or []
-    item_count = len(result_files) or len(raw_results)
+    result_files = result.get("result_files", []) or []
+    provider = result.get("provider", "")
 
-    lines = ["type: extract", f"items: {item_count}"]
+    if raw_results:
+        items = raw_results
+    else:
+        items = result_files
 
-    ok_files = [item for item in result_files if item.get("file") and not item.get("error")]
-    error_items = [item for item in result_files if item.get("error")]
+    lines = ["type: extract", f"items: {len(items)}"]
+    if provider:
+        lines.append(f"provider: {provider}")
+    lines.append("")
 
-    if ok_files:
-        lines.append("next: read_file")
+    for i, item in enumerate(items, 1):
+        url = item.get("url", "")
+        err = item.get("error")
+        if err:
+            lines.append(f"--- item {i} ---")
+            lines.append(f"url: {url}")
+            lines.append(f"error: {_inline(err)}")
+            lines.append("")
+            continue
+
+        content = (item.get("content") or "").strip()
+        title = item.get("title") or ""
+        lines.append(f"--- item {i} ---")
+        lines.append(f"url: {url}")
+        if title:
+            lines.append(f"title: {title}")
+        lines.append("content:")
+        lines.append(content if content else "(empty)")
         lines.append("")
-        lines.append(f"files[{len(ok_files)}]{{idx,file,chars,lines,title}}:")
-        for idx, item in enumerate(ok_files, 1):
-            lines.append(
-                f"  {idx},{item.get('file', '')},{item.get('chars', 0)}c,{item.get('lines', 0)}L,{_truncate(item.get('title', ''))}"
-            )
-            lines.append(f"    {_inline(item.get('url', ''))}")
-    elif raw_results:
-        lines.append("")
-        lines.append(f"preview[{len(raw_results)}]{{idx,url,chars,title}}:")
-        for idx, item in enumerate(raw_results, 1):
-            lines.append(
-                f"  {idx},{_inline(item.get('url', ''))},{len(item.get('content', ''))}c,{_truncate(item.get('title', ''))}"
-            )
 
-    if not error_items:
-        error_items = [item for item in raw_results if item.get("error")]
-
-    if error_items:
-        lines.append("")
-        lines.append(f"errors[{len(error_items)}]{{idx,url,error}}:")
-        for idx, item in enumerate(error_items, 1):
-            lines.append(f"  {idx},{_inline(item.get('url', ''))},{_inline(item.get('error', ''))}")
-
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
-def format_research_output(result: dict[str, Any], preview_chars: int = 1000) -> str:
-    """Format research results for predictable agent parsing."""
+def format_research_output(result: dict[str, Any]) -> str:
+    """Inline full research report."""
     topic = result.get("topic", "")
-    result_file = result.get("result_file", "")
-    content = result.get("content", "") or ""
-    total_lines = content.count("\n") + 1 if content else 0
+    content = (result.get("content", "") or "").strip()
+    provider = result.get("provider", "")
 
     lines = ["type: research", f"topic: {topic}"]
-    if result_file:
-        lines.append(f"file: {result_file}")
-        lines.append("next: read_file")
-    lines.append(f"size: {len(content)}c {total_lines}L")
+    if provider:
+        lines.append(f"provider: {provider}")
     lines.append("")
-    lines.append("preview:")
-    lines.append(
-        content[:preview_chars] + ("\n\n...(truncated)..." if len(content) > preview_chars else "")
-    )
+    lines.append("report:")
+    lines.append(content if content else "(empty)")
     return "\n".join(lines)
+
+
+MCP_SERVER_INSTRUCTIONS = """Search Gateway MCP tools return full text inline (search snippets, extract body, research report).
+Use the tool output directly. Do not follow up with read_file on disk paths.
+Use extract only when the user needs full page content for a specific URL — not as a default after search.
+Prefer automatic provider routing; omit the provider argument unless the user asks for one.
+"""

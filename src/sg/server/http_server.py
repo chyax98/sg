@@ -101,11 +101,19 @@ class HTTPServer:
         self.gateway = gateway
         self.port = port
         self.host = host
-        self.app = FastAPI(title="Search Gateway")
         self._server: uvicorn.Server | None = None
 
+        from .mcp_http import MCP_HTTP_PATH, create_mcp_http_app, mount_mcp_http
+
+        self._mcp_app = create_mcp_http_app(
+            port=self.port,
+            config_path=getattr(gateway, "config_path", None),
+        )
+        self.app = FastAPI(title="Search Gateway", lifespan=self._mcp_app.lifespan)
         self._setup_security()
         self._setup_routes()
+        mount_mcp_http(self.app, self._mcp_app)
+        logger.info("Mounted MCP at %s", MCP_HTTP_PATH)
 
     def _setup_security(self) -> None:
         @self.app.middleware("http")

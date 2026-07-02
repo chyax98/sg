@@ -123,6 +123,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
             if resp.status_code == 200:
                 click.echo("\n✓ Gateway started successfully!")
                 click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
+                click.echo(f"  MCP HTTP:  http://127.0.0.1:{port}/mcp")
                 click.echo(f"  Web UI:    http://127.0.0.1:{port}")
                 click.echo(
                     "\n  Commands:  search-gateway status | search-gateway stop | search-gateway web"
@@ -155,6 +156,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
         gateway = Gateway(config_path=config, port=port)
         await gateway.start()
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
+        click.echo(f"  MCP HTTP:  http://127.0.0.1:{port}/mcp")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
         click.echo(
             "\n  Commands:  search-gateway search 'query' | search-gateway status | search-gateway stop\n"
@@ -634,7 +636,7 @@ description: >
 
 ## 执行检查点
 
-- [ ] 结果包含 `file:` 路径时，**必须读取该文件**获取完整内容
+- [ ] `search` / `extract` / `research` 的完整内容已在命令输出里，**直接使用**，不必再读历史文件
 - [ ] 不要主动指定 `-p provider`，让自动故障转移工作
 - [ ] 如果命令报错网关未启动，重试一次（CLI 会自动后台启动）
 
@@ -655,10 +657,10 @@ description: >
 
 ## Known Gotchas
 
-- **不读文件 = 丢失结果**：`search-gateway search` 和 `research` 的完整结果通常在返回的文件路径中，stdout 只是预览。看到 `file:` 或 `next: read_file` 必须执行 ReadFile 读取。
+- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，用输出作答即可。
 - **不要手动指定 provider**：自动路由已配置多 provider 故障转移，手动 `-p tavily` 等会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
 - **网关未启动时自动启动**：首次调用可能因后台启动而稍慢，如果收到 "Gateway not running"，等待 3-5 秒后重试即可。
-- **extract 结果也要读文件**：`search-gateway extract` 同样返回文件路径，必须读取文件获取提取内容。
+- **搜完别乱 extract**：用 search 的 snippet 答题；只有用户明确要整页正文时才 `extract` 给定 URL。
 
 ## MCP 集成（可选）
 

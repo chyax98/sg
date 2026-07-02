@@ -1,14 +1,28 @@
 """MCP Server — expose gateway as MCP tools for LLMs."""
 
+import asyncio
 import logging
+import sys
 from typing import Any
 
 import httpx
 
-from .._agent_output import format_extract_output, format_research_output, format_search_output
+from .._agent_output import (
+    MCP_SERVER_INSTRUCTIONS,
+    format_extract_output,
+    format_research_output,
+    format_search_output,
+)
 from .._utils import ensure_gateway_running
 
 logger = logging.getLogger(__name__)
+
+
+async def _exit_when_stdin_closed() -> None:
+    """Exit when the MCP host closes stdio (e.g. OpenCode client.close or parent exit)."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, sys.stdin.buffer.read)
+    logger.info("MCP stdio client disconnected (stdin EOF)")
 
 
 class MCPServer:
@@ -20,18 +34,18 @@ class MCPServer:
     and exposes MCP tools for LLM integration.
     """
 
-    def __init__(self, port: int = 8100, config: str | None = None):
+    def __init__(self, port: int = 8100, config: str | None = None, *, require_daemon: bool = True):
         self.port = port
         self.config = config
         self.base_url = f"http://127.0.0.1:{port}"
 
-        # Ensure daemon is running before setting up tools
-        ensure_gateway_running(port, config)
+        if require_daemon:
+            ensure_gateway_running(port, config)
 
         # Import FastMCP lazily to avoid import overhead
         from fastmcp import FastMCP
 
-        self.mcp = FastMCP(name="search-gateway")
+        self.mcp = FastMCP(name="search-gateway", instructions=MCP_SERVER_INSTRUCTIONS)
         self._setup_tools()
 
     @property
@@ -90,19 +104,7 @@ class MCPServer:
                        Supported params vary by provider - unsupported params are ignored
 
             Returns:
-                TOON format string containing:
-                - Query and view file path
-                - Preview of top results with title, URL, score
-
-                Example output:
-                q: Python async
-                file: /Users/xxx/.sg/history/view/2026-03/1742752563408-e1.txt
-
-                results[5]{title,url,score}:
-                  1,Python Asyncio Docs,https://docs.python.org/3/library/asyncio.html,0.95
-                  2,...
-
-            Read the returned file for full result details (JSONL, one result per line).
+                Full inlined snippets for every hit (title, url, snippet text).
             """
             result = await self._call_gateway(
                 "/search",
@@ -118,7 +120,7 @@ class MCPServer:
                 },
             )
 
-            return format_search_output(result)
+            return format_search_output(result, for_mcp=True)
 
         @self.mcp.tool()
         async def extract(
@@ -148,10 +150,7 @@ class MCPServer:
                        Supported params vary by provider - unsupported params are ignored
 
             Returns:
-                A file path containing the extracted JSON data, and a summary of the URLs processed.
-                You MUST read the returned file path to access the full extracted contents,
-                as they are not returned directly to save context space.
-                The file contains a single JSON line with the extracted content.
+                Full extracted page content inlined per URL (markdown or text).
             """
             result = await self._call_gateway(
                 "/extract",
@@ -190,10 +189,7 @@ class MCPServer:
                       - "auto": Automatically choose based on query complexity (default)
 
             Returns:
-                A file path containing the research report.
-                You MUST read the returned file path to access the full report,
-                as it is not returned directly to save context space.
-                The file contains line-wrapped plain text.
+                Full research report inlined in the tool response.
 
             Note: This operation may take longer than simple search (10-30 seconds depending on depth).
             """
@@ -252,4 +248,18 @@ class MCPServer:
 
     async def run_stdio(self):
         """Run MCP server in stdio mode (for Claude Desktop)."""
-        await self.mcp.run_stdio_async()
+        mcp_task = asyncio.create_task(self.mcp.run_stdio_async(show_banner=False))
+        stdin_task = asyncio.create_task(_exit_when_stdin_closed())
+        try:
+            await asyncio.wait({mcp_task, stdin_task}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (mcp_task, stdin_task):
+                if not task.done():
+                    task.cancel()
+            for task in (mcp_task, stdin_task):
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            if hasattr(self, "_http_client"):
+                await self._http_client.aclose()

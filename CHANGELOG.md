@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **MCP Streamable HTTP**：`search-gateway start` 在 `http://127.0.0.1:8100/mcp` 暴露 MCP（与 REST 共用 daemon，OpenCode 可用 `type: remote` + `oauth: false`）
+
+### 修复
+
+- **MCP stdio 生命周期**：宿主关闭 stdin 时 MCP 子进程立即退出并关闭 HTTP 客户端，避免 OpenCode 重连后遗留僵尸 `search-gateway mcp` 进程
+
 ## [1.0.3] - 2026-03-24
 
 ### 变更
