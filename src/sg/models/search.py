@@ -23,13 +23,13 @@ class SearchCapability(BaseModel):
 
 
 class ExtractCapability(BaseModel):
-    formats: list[ExtractFormat] = Field(default_factory=lambda: ["markdown"])
+    formats: list[ExtractFormat] = Field(default=["markdown"])
     multi_url: bool = True
     only_main: bool = False
 
 
 class ResearchCapability(BaseModel):
-    depths: list[ResearchDepth] = Field(default_factory=lambda: ["auto", "mini", "pro"])
+    depths: list[ResearchDepth] = Field(default=["auto", "mini", "pro"])
 
 
 class ProviderCapability(BaseModel):

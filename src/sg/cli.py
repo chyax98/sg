@@ -658,6 +658,63 @@ def skill():
     pass
 
 
+@cli.group()
+def plugin():
+    """Manage opencode/IDE plugins."""
+    pass
+
+
+@plugin.command(name="install")
+@click.option(
+    "--path",
+    "-p",
+    default=None,
+    help="Plugins directory (default: ~/.config/opencode/plugins)",
+)
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing files")
+def plugin_install(path: str | None, force: bool):
+    """Install OpenCode plugins (websearch/webfetch/context7) to local opencode."""
+    plugins_dir = (
+        Path(path).expanduser() if path else Path.home() / ".config" / "opencode" / "plugins"
+    )
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+
+    # Wheel: sg/_plugins_data/; dev/editable: <repo>/plugins/opencode/
+    src_candidates = [
+        Path(__file__).resolve().parent / "_plugins_data",
+        Path(__file__).resolve().parent.parent.parent / "plugins" / "opencode",
+    ]
+    src_dir = next((p for p in src_candidates if p.is_dir()), None)
+    if not src_dir:
+        click.echo(f"Error: plugin sources not found (tried {src_candidates})", err=True)
+        sys.exit(1)
+
+    targets = ["search-gateway-web.js", "search-gateway-context7.js"]
+    installed: list[Path] = []
+    skipped: list[Path] = []
+    for name in targets:
+        src = src_dir / name
+        if not src.is_file():
+            click.echo(f"Error: missing plugin source {name}", err=True)
+            sys.exit(1)
+        dst = plugins_dir / name
+        if dst.exists() and not force:
+            skipped.append(dst)
+            continue
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        installed.append(dst)
+
+    click.echo(f"\n✓ Installed {len(installed)} plugin(s) to {plugins_dir}:")
+    for p in installed:
+        click.echo(f"  - {p.name}")
+    if skipped:
+        click.echo("\nSkipped (already exist, use --force to overwrite):")
+        for p in skipped:
+            click.echo(f"  - {p.name}")
+
+    click.echo("\nNext: add to opencode.json plugin array, then restart opencode.")
+
+
 @skill.command(name="install")
 @click.option(
     "--path",

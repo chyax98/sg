@@ -113,7 +113,7 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
 
         async def _extract_one(url: str) -> ExtractResult:
             try:
-                resp = await self._extract_client.get(
+                resp = await self._extract_client.get(  # type: ignore[union-attr]
                     f"https://r.jina.ai/{url}",
                     headers={"Accept": "application/json"},
                 )

@@ -184,7 +184,7 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
         last = data
         while time.perf_counter() < deadline:
             await asyncio.sleep(2.0)
-            last = await self._client.get_research(request_id)
+            last = await self._client.get_research(request_id)  # type: ignore[union-attr]
             if not isinstance(last, dict):
                 continue
             st = text(attr(last, "status")).lower()

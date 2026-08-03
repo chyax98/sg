@@ -16,6 +16,7 @@ from ..models.search import (
     ExtractRequest,
     ExtractResponse,
     ExtractResult,
+    ResearchDepth,
     ResearchRequest,
     ResearchResponse,
     SearchRequest,
@@ -139,7 +140,7 @@ class Gateway:
 
         results: list[SearchResponse] = []
         for i, r in enumerate(raw_results):
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 logger.error(f"Batch search query '{queries[i]}' failed: {r}")
                 results.append(
                     SearchResponse(
@@ -225,7 +226,7 @@ class Gateway:
                     warnings_acc.extend(projected.warnings)
                     return await p.extract(projected.request)
 
-                return await self.executor.execute(
+                return await self.executor.execute(  # type: ignore[no-any-return]
                     "extract",
                     op,
                     spread_index=idx,
@@ -239,7 +240,7 @@ class Gateway:
             providers_used: set[str] = set()
             max_latency = 0.0
             for i, resp in enumerate(responses):
-                if isinstance(resp, Exception):
+                if isinstance(resp, BaseException):
                     logger.error(f"Extract URL '{urls[i]}' failed: {resp}")
                     all_results.append(ExtractResult(url=urls[i], content="", error=str(resp)))
                 else:
@@ -280,7 +281,7 @@ class Gateway:
         return response
 
     async def research(
-        self, topic: str, depth: str = "auto", provider: str | None = None
+        self, topic: str, depth: ResearchDepth = "auto", provider: str | None = None
     ) -> ResearchResponse:
         """Deep research with failover."""
         request = ResearchRequest(topic=topic, depth=depth)
@@ -333,7 +334,7 @@ class Gateway:
         target = provider
         if not target and self.providers.has_group("context7"):
             target = "context7"
-        return await self.executor.execute("docs_search", op, provider=target)
+        return await self.executor.execute("docs_search", op, provider=target)  # type: ignore[no-any-return]
 
     async def docs_context(
         self,
@@ -354,7 +355,7 @@ class Gateway:
         target = provider
         if not target and self.providers.has_group("context7"):
             target = "context7"
-        return await self.executor.execute("docs_context", op, provider=target)
+        return await self.executor.execute("docs_context", op, provider=target)  # type: ignore[no-any-return]
 
     # === Status ===
 

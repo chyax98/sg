@@ -130,7 +130,7 @@ class HTTPServer:
             port=self.port,
             config_path=getattr(gateway, "config_path", None),
         )
-        self.app = FastAPI(title="Search Gateway", lifespan=self._mcp_app.lifespan)
+        self.app = FastAPI(title="Search Gateway", lifespan=self._mcp_app.lifespan)  # type: ignore[attr-defined]
         self._setup_security()
         self._setup_routes()
         mount_mcp_http(self.app, self._mcp_app)

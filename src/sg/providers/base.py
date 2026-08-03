@@ -64,16 +64,16 @@ class ProviderInfo:
             object.__setattr__(self, "search_features", tuple(feats))
         # If only legacy tuples were provided, build capability once.
         if not self.capability.ops and self.capabilities:
-            feats = set(self.search_features)
+            feats_set: set[str] = set(self.search_features)
             search = (
                 SearchCapability(
-                    domains="domains" in feats,
-                    exclude_domains="exclude_domains" in feats,
-                    time_range="time_range" in feats,
-                    depth="depth" in feats,
-                    language="language" in feats,
-                    location="location" in feats,
-                    raw_content="raw_content" in feats,
+                    domains="domains" in feats_set,
+                    exclude_domains="exclude_domains" in feats_set,
+                    time_range="time_range" in feats_set,
+                    depth="depth" in feats_set,
+                    language="language" in feats_set,
+                    location="location" in feats_set,
+                    raw_content="raw_content" in feats_set,
                 )
                 if "search" in self.capabilities
                 else None

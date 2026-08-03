@@ -147,7 +147,7 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
                     "output": {"formats": [out_fmt]},
                 }
 
-                response = await self._client.post("/v1/scrape", json=payload)
+                response = await self._client.post("/v1/scrape", json=payload)  # type: ignore[union-attr]
                 response.raise_for_status()
                 data = response.json()
 

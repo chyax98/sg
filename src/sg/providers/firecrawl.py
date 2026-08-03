@@ -97,7 +97,7 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
 
         async def one(url: str):
             try:
-                doc = await self._client.scrape(url, **scrape_kwargs)
+                doc = await self._client.scrape(url, **scrape_kwargs)  # type: ignore[union-attr]
                 body = text(attr(doc, "markdown", "html", "raw_html", "content", "text"))
                 meta = attr(doc, "metadata")
                 title = text(attr(meta, "title"), attr(doc, "title"))

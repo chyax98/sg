@@ -57,7 +57,7 @@ class MCPServer:
         else:
             resp = await self.http_client.get(f"{self.base_url}{endpoint}")
         resp.raise_for_status()
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
 
     def _setup_tools(self):
         @self.mcp.tool()

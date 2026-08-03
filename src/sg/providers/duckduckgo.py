@@ -25,10 +25,8 @@ class DuckDuckGoProvider(SearchProvider):
         self._ddgs = None
 
     async def initialize(self) -> bool:
-        try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS  # type: ignore[assignment]
+        from ddgs import DDGS
+
         self._ddgs = DDGS()
         return True
 
