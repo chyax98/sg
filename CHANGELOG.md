@@ -7,10 +7,15 @@
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-08-03
+
 ### 新增
 
 - **MCP Streamable HTTP**：`search-gateway start` 在 `http://127.0.0.1:8100/mcp` 暴露 MCP（与 REST 共用 daemon，OpenCode 可用 `type: remote` + `oauth: false`）
-- **macOS LaunchAgent**：`make install-launchd` 开机自启 Search Gateway
+- **macOS LaunchAgent**：`search-gateway daemon install` 一键开机自启 + 崩溃拉起（动态生成 plist，Label `com.search-gateway`）
+- **Context7 provider**：`docs_search` / `docs_context` 能力，对齐官方 MCP `@upstash/context7-mcp`
+- **OpenCode plugin 集成**：`search-gateway plugin install` + `plugin setup`，把 `websearch` / `webfetch` / `webresearch` / `resolve-library-id` / `query-docs` 暴露成 opencode 原生工具
+- **三层文档体系**：`-h` 概览 → `skill get` 完整原文 → README + `docs/install/` 自闭环安装文档（uv / source / macos-daemon）
 
 ### 变更
 
@@ -22,6 +27,9 @@
   - Tavily `research` 走官方 `client.research` / `get_research`（不再 search 拼报告）
   - Tavily / Exa / Firecrawl 参数与结果组装对齐 SDK；`_assemble.py` 统一 hit/page
   - 依赖升级：tavily-python、exa-py、firecrawl-py、ddgs、fastapi、uvicorn、pydantic、fastmcp 等
+- **CLI 参数命名对齐协议**：`max_results` → `limit`、`include_domains` → `domains`、`search_depth` → `depth`（破坏性）
+- **`skill install` 移除**：改为 `skill get [name]` 直接打印 SKILL.md 到 stdout（破坏性）
+- **mypy 全量过**（37 source files, 0 errors）
 
 ### 修复
 

@@ -4,6 +4,25 @@ version = "1.0.8"
 description = "Unified search gateway with failover across multiple providers"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "chyax98", email = "chyax98@users.noreply.github.com" },
+]
+keywords = ["search", "ai", "gateway", "mcp", "failover", "tavily", "exa", "context7"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "fastapi>=0.100.0",
     "fastmcp>=0.1.0",
@@ -17,6 +36,12 @@ dependencies = [
     "exa-py>=2.0.0",
     "firecrawl-py>=3.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/chyax98/sg"
+Repository = "https://github.com/chyax98/sg"
+Changelog = "https://github.com/chyax98/sg/blob/main/CHANGELOG.md"
+Issues = "https://github.com/chyax98/sg/issues"
 
 [project.optional-dependencies]
 dev = [
