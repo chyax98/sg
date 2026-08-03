@@ -237,7 +237,9 @@ def _print_result_file(data: dict) -> None:
 )
 @click.option("--time-range", type=click.Choice(["day", "week", "month", "year"]), default=None)
 @click.option(
+    "--depth",
     "--search-depth",
+    "depth",
     type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]),
     default="basic",
 )
