@@ -133,8 +133,13 @@ function formatFetch(data, format) {
 function formatResearch(data) {
   const report = String(data?.report || "").trim()
   const sources = Array.isArray(data?.sources) ? data.sources.filter(Boolean) : []
+  const notice = String(data?.notice || "").trim()
+  const degraded = Boolean(data?.degraded)
   const lines = []
   if (data?.topic) lines.push(`# ${data.topic}`, "")
+  if (degraded || notice) {
+    lines.push(`> ${notice || "research degraded to search summary"}`, "")
+  }
   lines.push(report || "(empty)")
   if (sources.length) {
     lines.push("", "## sources")

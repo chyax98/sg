@@ -63,3 +63,20 @@ def test_format_research_output_full_inline():
     assert "AI trends" in result
     assert "https://a.example" in result
     assert "tavily" not in result
+
+
+def test_format_research_output_surfaces_degrade_notice():
+    result = format_research_output(
+        {
+            "topic": "AI UI",
+            "provider": "search:exa-1",
+            "report": "Brief from hits",
+            "sources": ["https://a.example"],
+            "degraded": True,
+            "notice": "research unavailable; degraded to search summary",
+        }
+    )
+
+    assert "degraded to search summary" in result
+    assert "Brief from hits" in result
+    assert result.index("degraded") < result.index("Brief from hits")

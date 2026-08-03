@@ -283,7 +283,7 @@ class Gateway:
     async def research(
         self, topic: str, depth: ResearchDepth = "auto", provider: str | None = None
     ) -> ResearchResponse:
-        """Deep research with failover."""
+        """Deep research with failover; degrades to search if research providers fail."""
         request = ResearchRequest(topic=topic, depth=depth)
         warnings_acc: list[str] = []
 
@@ -294,8 +294,17 @@ class Gateway:
             warnings_acc.extend(projected.warnings)
             return await p.research(projected.request)
 
-        response: ResearchResponse = await self.executor.execute("research", op, provider=provider)
-        response.warnings = merge_warnings(response.warnings, warnings_acc)
+        try:
+            response: ResearchResponse = await self.executor.execute(
+                "research", op, provider=provider
+            )
+            response.warnings = merge_warnings(response.warnings, warnings_acc)
+        except Exception as exc:
+            # Explicit provider pin: fail hard (user asked for that backend).
+            if provider is not None:
+                raise
+            logger.warning("research failed, degrading to search: %s", exc)
+            response = await self._research_via_search(topic, depth, research_error=exc)
 
         # Save to history file
         result_file = await self.history.record_content(
@@ -307,6 +316,73 @@ class Gateway:
         )
         response.result_file = result_file
         return response
+
+    async def _research_via_search(
+        self,
+        topic: str,
+        depth: ResearchDepth,
+        *,
+        research_error: Exception,
+    ) -> ResearchResponse:
+        """Build a research-shaped response from search hits when native research is down."""
+        limit_by_depth = {"mini": 5, "auto": 10, "pro": 15}
+        search_depth = "advanced" if depth == "pro" else "basic"
+        limit = limit_by_depth.get(depth, 10)
+
+        search = await self.search(
+            query=topic,
+            limit=limit,
+            depth=search_depth,
+        )
+        report = self._search_hits_to_research_report(topic, search)
+        if not report.strip():
+            raise RuntimeError(
+                f"research failed and search degrade returned empty: {research_error}"
+            ) from research_error
+
+        err_text = str(research_error).strip() or type(research_error).__name__
+        notice = (
+            "research unavailable; degraded to search summary. "
+            f"research_error={err_text}; search_provider={search.provider}"
+        )
+        sources = [h.url for h in search.results if h.url]
+        return ResearchResponse(
+            topic=topic,
+            report=report,
+            sources=sources,
+            provider=f"search:{search.provider}",
+            latency_ms=search.latency_ms,
+            warnings=merge_warnings(search.warnings, [notice]),
+            degraded=True,
+            notice=notice,
+        )
+
+    @staticmethod
+    def _search_hits_to_research_report(topic: str, search: SearchResponse) -> str:
+        lines: list[str] = [
+            "## Summary (degraded from research)",
+            "",
+            f"Native research providers failed. Below is a search-based brief on: **{topic}**",
+            "",
+        ]
+        if not search.results:
+            lines.append("(no search hits)")
+            return "\n".join(lines).rstrip()
+
+        lines.append("## Findings")
+        lines.append("")
+        for i, hit in enumerate(search.results, 1):
+            title = (hit.title or "").strip() or "(untitled)"
+            url = (hit.url or "").strip()
+            snippet = (hit.snippet or hit.raw or "").strip()
+            lines.append(f"### {i}. {title}")
+            if url:
+                lines.append(url)
+            if snippet:
+                lines.append("")
+                lines.append(snippet)
+            lines.append("")
+        return "\n".join(lines).rstrip()
 
     # === Context7 docs side-path (not web search) ===
 

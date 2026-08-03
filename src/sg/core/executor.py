@@ -183,11 +183,16 @@ class Executor:
             self._metrics[name] = ProviderMetrics()
         return self._metrics[name]
 
+    # Native research (e.g. Tavily async job + poll) routinely exceeds search/extract timeouts.
+    _RESEARCH_MIN_TIMEOUT_S = 180.0
+
     async def _try_provider(
         self,
         name: str,
         provider: BaseProvider,
         operation: Callable[[BaseProvider], Any],
+        *,
+        capability: str | None = None,
     ) -> tuple[bool, Any, Exception | None]:
         """Run one provider attempt and update breaker/metrics."""
         breaker = self._breaker(name)
@@ -195,6 +200,8 @@ class Executor:
 
         try:
             timeout_s = provider.timeout / 1000
+            if capability == "research":
+                timeout_s = max(timeout_s, self._RESEARCH_MIN_TIMEOUT_S)
             start = time.perf_counter()
             async with asyncio.timeout(timeout_s):
                 result = await operation(provider)
@@ -332,6 +339,7 @@ class Executor:
                     provider_instance.name,
                     provider_instance,
                     operation,
+                    capability=capability,
                 )
                 if ok:
                     logger.info(f"Request completed: provider={provider_instance.name}")
@@ -362,6 +370,7 @@ class Executor:
                     provider_instance.name,
                     provider_instance,
                     operation,
+                    capability=capability,
                 )
                 if ok:
                     logger.info("Fallback to %s succeeded", provider_instance.name)

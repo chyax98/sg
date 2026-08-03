@@ -152,6 +152,9 @@ class ResearchResponse(BaseModel):
     latency_ms: float = 0.0
     warnings: list[str] = Field(default_factory=list)
     result_file: str | None = None
+    # True when native research providers failed and result was built from search hits
+    degraded: bool = False
+    notice: str | None = None
 
 
 # --- Context7 docs side-path (not web search) ---

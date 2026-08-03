@@ -9,6 +9,7 @@ from sg.models.search import (
     ExtractResponse,
     ExtractResult,
     ResearchResponse,
+    SearchHit,
     SearchResponse,
 )
 from sg.providers.registry import ProviderRegistry
@@ -278,6 +279,64 @@ class TestGatewayResearch:
         gateway.executor.execute.assert_called_once()
         assert gateway.executor.execute.call_args[0][0] == "research"
         assert result.topic == "AI trends"
+        assert result.degraded is False
+
+    @pytest.mark.asyncio
+    async def test_research_degrades_to_search_on_failure(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19031)
+        gateway.executor = MagicMock(spec=Executor)
+        gateway.executor.execute = AsyncMock(
+            side_effect=RuntimeError(
+                "All providers failed for 'research'. tavily-2: TimeoutError()"
+            )
+        )
+        gateway.history = MagicMock()
+        gateway.history.record_content = AsyncMock(return_value="/tmp/research-degraded.txt")
+        gateway.history.record = AsyncMock(return_value="/tmp/search.txt")
+
+        search_resp = SearchResponse(
+            query="AI UI phases",
+            provider="exa-1",
+            results=[
+                SearchHit(
+                    title="Cursor agent UI",
+                    url="https://example.com/cursor",
+                    snippet="Tool calls drive the timeline.",
+                )
+            ],
+            latency_ms=120.0,
+        )
+        gateway.search = AsyncMock(return_value=search_resp)
+
+        result = await gateway.research("AI UI phases", depth="mini")
+
+        assert result.degraded is True
+        assert result.notice is not None
+        assert "degraded to search" in result.notice
+        assert result.provider == "search:exa-1"
+        assert "https://example.com/cursor" in result.sources
+        assert "Tool calls drive the timeline." in result.report
+        gateway.search.assert_awaited_once()
+        assert gateway.search.await_args.kwargs["limit"] == 5
+        assert gateway.search.await_args.kwargs["depth"] == "basic"
+
+    @pytest.mark.asyncio
+    async def test_research_pinned_provider_does_not_degrade(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text("{}")
+
+        gateway = Gateway(config_path=str(config_file), port=19032)
+        gateway.executor = MagicMock(spec=Executor)
+        gateway.executor.execute = AsyncMock(side_effect=RuntimeError("tavily down"))
+        gateway.search = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="tavily down"):
+            await gateway.research("topic", provider="tavily-2")
+
+        gateway.search.assert_not_called()
 
 
 class TestGatewayStatus:

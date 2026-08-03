@@ -60,11 +60,14 @@ def format_extract_output(result: dict[str, Any]) -> str:
 
 
 def format_research_output(result: dict[str, Any]) -> str:
-    """Inline research report and source URLs. No routing metadata."""
+    """Inline research report and source URLs. Surface degrade notice when present."""
     topic = _s(result.get("topic"))
     report = _s(result.get("report") or result.get("content"))
     sources = [s for s in (result.get("sources") or []) if _s(s)]
     error = result.get("error")
+    notice = _s(result.get("notice"))
+    degraded = bool(result.get("degraded"))
+    warnings = [_s(w) for w in (result.get("warnings") or []) if _s(w)]
 
     lines: list[str] = []
     if topic:
@@ -72,6 +75,13 @@ def format_research_output(result: dict[str, Any]) -> str:
     if error and not report:
         lines.append(f"Research failed: {_s(error)}")
         return "\n".join(lines).rstrip()
+    if degraded or notice:
+        lines.append(f"> {notice or 'research degraded to search summary'}")
+        lines.append("")
+    elif warnings:
+        # Only surface the first warning when not already covered by notice
+        lines.append(f"> {warnings[0]}")
+        lines.append("")
     lines.append(report or "(empty)")
     if sources:
         lines.append("")
