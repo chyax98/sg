@@ -843,7 +843,6 @@ def plugin_setup(config: str | None):
 # ============================================================
 
 _DAEMON_LABEL = "com.search-gateway"
-_DAEMON_LABEL_LEGACY = "com.xd.search-gateway"
 _PLIST_PRINT_KEYS = ("state", "pid", "last exit code", "path =")
 _PLIST_DEFAULT_PORT = 8100
 
@@ -931,18 +930,6 @@ def _http_status_ok(port: int = _PLIST_DEFAULT_PORT) -> bool:
         return False
 
 
-def _resolve_bin() -> str:
-    """Prefer the user-global uv tool install over the active venv's binary."""
-    candidates: list[str] = [
-        str(Path.home() / ".local" / "bin" / "search-gateway"),
-        shutil.which("search-gateway") or "",
-    ]
-    for c in candidates:
-        if c and Path(c).exists():
-            return c
-    return ""
-
-
 def _require_macos(action: str) -> None:
     if platform.system() != "Darwin":
         click.echo(
@@ -966,7 +953,7 @@ def daemon_install(port: int, force: bool):
     """Install daemon auto-start (macOS: launchd)."""
     _require_macos("install")
 
-    bin_path = _resolve_bin()
+    bin_path = shutil.which("search-gateway")
     if not bin_path:
         click.echo("Error: search-gateway not found in PATH", err=True)
         sys.exit(1)
@@ -978,24 +965,13 @@ def daemon_install(port: int, force: bool):
 
     plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
 
-    # Idempotent + self-healing: 已装且关键配置（bin 路径 + 端口）都对，才跳过。
-    # 路径漂移（如 .venv → ~/.local/bin）自动重写，不需要 --force。
+    # Idempotent: 已装且未要求 force 就跳过
     if plist_path.exists() and not force:
-        existing = plist_path.read_text(encoding="utf-8")
-        if bin_path in existing and f"<string>{port}</string>" in existing:
-            click.echo(f"✓ Already installed at {plist_path}")
-            click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
-            return
-        click.echo(f"Detected drift in {plist_path}, rewriting...")
+        click.echo(f"✓ Already installed at {plist_path}")
+        click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
+        return
 
-    # 清理 legacy label (com.xd.search-gateway)
-    legacy_plist = agents_dir / f"{_DAEMON_LABEL_LEGACY}.plist"
-    if legacy_plist.exists():
-        click.echo(f"Cleaning up legacy label {_DAEMON_LABEL_LEGACY}...")
-        _bootout(_DAEMON_LABEL_LEGACY)
-        legacy_plist.unlink(missing_ok=True)
-
-    # 若新 label 已装，先 bootout
+    # 若已装，先 bootout 旧实例
     if plist_path.exists():
         _bootout(_DAEMON_LABEL)
 
@@ -1036,19 +1012,11 @@ def daemon_uninstall():
     home = Path.home()
     agents_dir = home / "Library" / "LaunchAgents"
 
-    removed: list[str] = []
-    for label, plist_name in [
-        (_DAEMON_LABEL, f"{_DAEMON_LABEL}.plist"),
-        (_DAEMON_LABEL_LEGACY, f"{_DAEMON_LABEL_LEGACY}.plist"),
-    ]:
-        plist_path = agents_dir / plist_name
-        if plist_path.exists():
-            _bootout(label)
-            plist_path.unlink(missing_ok=True)
-            removed.append(label)
-
-    if removed:
-        click.echo(f"✓ Removed label(s): {', '.join(removed)}")
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+    if plist_path.exists():
+        _bootout(_DAEMON_LABEL)
+        plist_path.unlink(missing_ok=True)
+        click.echo(f"✓ Removed {_DAEMON_LABEL}")
     else:
         click.echo("Nothing to uninstall.")
 

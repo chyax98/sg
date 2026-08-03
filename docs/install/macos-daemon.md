@@ -23,10 +23,9 @@ CLI 做的事：
 1. 检测平台（仅 macOS 受支持，Linux/Windows 报清晰错误）
 2. 解析 `which search-gateway` 真实路径 + `$HOME`
 3. 动态生成 plist 写到 `~/Library/LaunchAgents/com.search-gateway.plist`
-4. 清理历史 Label `com.xd.search-gateway` 的残留（自动迁移）
-5. `search-gateway stop` 停掉非 launchd 托管的旧 daemon（避免端口冲突）
-6. `launchctl bootstrap` + `enable`
-7. curl `/status` 验证启动成功
+4. `search-gateway stop` 停掉非 launchd 托管的旧 daemon（避免端口冲突）
+5. `launchctl bootstrap` + `enable`
+6. curl `/status` 验证启动成功
 
 `make install-launchd` 是 CLI 命令的 alias（Makefile 直接 delegate）。
 
@@ -45,7 +44,7 @@ search-gateway daemon uninstall
 # 或 make uninstall-launchd
 ```
 
-同时清理当前 Label 与历史 Label 的 plist。
+卸载会 bootout 服务并删除 plist。
 
 ## 验证
 
@@ -65,10 +64,9 @@ tail -f ~/.sg/logs/launchd-stderr.log
 - 日志：`~/.sg/logs/launchd-{stdout,stderr}.log` + `~/.sg/logs/gateway.log`
 - 端口：默认 8100（`--port` 自定义）
 
-## Label 命名
+## Label
 
-- 当前：`com.search-gateway`（去个人化）
-- 历史：`com.xd.search-gateway`（已废弃，install 时自动迁移清理）
+`com.search-gateway`
 
 ## 排错
 
@@ -78,4 +76,3 @@ tail -f ~/.sg/logs/launchd-stderr.log
 | 端口 8100 被占 | `lsof -iTCP:8100`，停掉占用进程；或 `daemon install --port 8101` |
 | `/status` 返回 500 | 看 `~/.sg/logs/launchd-stderr.log`，常见是 `~/.sg/config.json` 语法错 |
 | 改了代码 daemon 还是旧行为 | editable 模式下，`search-gateway daemon uninstall && daemon install` 让 launchd 重启进程加载新代码 |
-| 历史残留 `com.xd.search-gateway` 还在跑 | `daemon uninstall` 会一并清理；或手动 `launchctl bootout gui/$(id -u)/com.xd.search-gateway` |

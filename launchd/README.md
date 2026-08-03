@@ -30,12 +30,11 @@ search-gateway daemon uninstall
 # 或 make uninstall-launchd
 ```
 
-会同时清理当前 Label (`com.search-gateway`) 与历史 Label (`com.xd.search-gateway`) 的残留 plist。
+bootout 服务并删除 plist。
 
-## Label 命名
+## Label
 
-- 当前：`com.search-gateway`
-- 历史：`com.xd.search-gateway`（已废弃，install 会自动迁移）
+`com.search-gateway`
 
 ## 行为
 
