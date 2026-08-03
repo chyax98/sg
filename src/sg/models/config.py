@@ -70,19 +70,26 @@ class HealthCheckConfig(StrictConfigModel):
 
 
 class CircuitBreakerConfig(StrictConfigModel):
-    """Circuit breaker settings with exponential backoff."""
+    """Circuit breaker settings with exponential backoff.
 
-    base_timeout: int = 3600
-    multiplier: float = 6.0
-    max_timeout: int = 172800
-    quota_timeout: int = 86400
-    auth_timeout: int = 604800
+    Defaults suit a local free-key pool: short cool-downs, not multi-day bans.
+    """
+
+    base_timeout: int = 300  # 5 minutes
+    multiplier: float = 2.0
+    max_timeout: int = 3600  # 1 hour cap
+    quota_timeout: int = 3600  # 1 hour on 429
+    auth_timeout: int = 86400  # 1 day on 401/403
 
 
 class FailoverConfig(StrictConfigModel):
-    """Failover execution settings."""
+    """Failover execution settings.
 
-    max_attempts: int = 3
+    max_attempts: max provider *groups* to try (not instances).
+    <= 0 means try every candidate group (recommended for free-key pools).
+    """
+
+    max_attempts: int = 0
 
 
 class ExecutorConfig(StrictConfigModel):

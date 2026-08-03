@@ -10,6 +10,18 @@
 ### 新增
 
 - **MCP Streamable HTTP**：`search-gateway start` 在 `http://127.0.0.1:8100/mcp` 暴露 MCP（与 REST 共用 daemon，OpenCode 可用 `type: remote` + `oauth: false`）
+- **macOS LaunchAgent**：`make install-launchd` 开机自启 Search Gateway
+
+### 变更
+
+- **标准协议 + Adapter（1.0.8）**
+  - 文档：`docs/protocol.md`（Capability / Spec / Result）
+  - 模型：`models/search.py` 协议化（limit/domains/depth、warnings、legacy 别名兼容）
+  - 投影：`protocol.py` 按 capability strip 不支持字段并写 warnings
+  - ProviderInfo 带结构化 `capability`；`/providers` 与 types API 输出 capability
+  - Tavily `research` 走官方 `client.research` / `get_research`（不再 search 拼报告）
+  - Tavily / Exa / Firecrawl 参数与结果组装对齐 SDK；`_assemble.py` 统一 hit/page
+  - 依赖升级：tavily-python、exa-py、firecrawl-py、ddgs、fastapi、uvicorn、pydantic、fastmcp 等
 
 ### 修复
 

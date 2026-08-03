@@ -1,11 +1,11 @@
 """Tests for DuckDuckGo provider."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from sg.providers.duckduckgo import DuckDuckGoProvider
-from sg.providers.base import ProviderInfo
+import pytest
+
 from sg.models.search import SearchRequest
+from sg.providers.duckduckgo import DuckDuckGoProvider
 
 
 class TestDuckDuckGoProvider:
@@ -69,7 +69,7 @@ class TestDuckDuckGoProvider:
         ) as mock_thread:
             mock_thread.return_value = mock_results
 
-            request = SearchRequest(query="test", max_results=3)
+            request = SearchRequest(query="test", limit=3)
             response = await provider.search(request)
 
             mock_thread.assert_called_once()
@@ -88,7 +88,7 @@ class TestDuckDuckGoProvider:
         ) as mock_thread:
             mock_thread.side_effect = Exception("Network error")
 
-            request = SearchRequest(query="test", max_results=3)
+            request = SearchRequest(query="test", limit=3)
             with pytest.raises(Exception, match="Network error"):
                 await provider.search(request)
 
@@ -102,7 +102,7 @@ class TestDuckDuckGoProvider:
         ) as mock_thread:
             mock_thread.return_value = []
 
-            request = SearchRequest(query="news", max_results=3, time_range="week")
+            request = SearchRequest(query="news", limit=3, time_range="week")
             await provider.search(request)
 
             # Verify timelimit was passed through kwargs

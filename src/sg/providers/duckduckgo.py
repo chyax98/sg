@@ -25,10 +25,8 @@ class DuckDuckGoProvider(SearchProvider):
         self._ddgs = None
 
     async def initialize(self) -> bool:
-        try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS  # type: ignore[assignment]
+        from ddgs import DDGS
+
         self._ddgs = DDGS()
         return True
 
@@ -42,12 +40,12 @@ class DuckDuckGoProvider(SearchProvider):
         self.validate_search_request(request)
         start = time.perf_counter()
 
-        kwargs: dict[str, Any] = {"max_results": request.max_results}
+        kwargs: dict[str, Any] = {"max_results": request.limit}
         if request.time_range:
             time_map = {"day": "d", "week": "w", "month": "m", "year": "y"}
             kwargs["timelimit"] = time_map.get(request.time_range)
-        if request.extra.get("region"):
-            kwargs["region"] = request.extra["region"]
+        if request.location:
+            kwargs["region"] = request.location
 
         # DDGS.text() is synchronous — run in thread to avoid blocking
         raw = await asyncio.to_thread(self._ddgs.text, request.query, **kwargs)  # type: ignore[union-attr]
@@ -56,7 +54,7 @@ class DuckDuckGoProvider(SearchProvider):
             SearchResult(
                 title=r.get("title", ""),
                 url=r.get("href", ""),
-                content=r.get("body", ""),
+                snippet=r.get("body", ""),
                 source=self.name,
             )
             for r in raw

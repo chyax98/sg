@@ -3,12 +3,12 @@
 Three-state machine: CLOSED → OPEN → HALF_OPEN → CLOSED.
 
 Recovery timeout increases with each consecutive trip:
-  1st trip: base_timeout (e.g. 1 hour)
-  2nd trip: base_timeout * multiplier (e.g. 6 hours)
-  3rd trip: base_timeout * multiplier^2 (e.g. 36 hours, capped at max)
+  1st trip: base_timeout (e.g. 5 minutes)
+  2nd trip: base_timeout * multiplier
+  later trips: capped at max_timeout
 
 Fatal errors (auth failure, quota exhaustion) bypass the threshold
-and open the breaker immediately with a long timeout.
+and open the breaker immediately with a dedicated timeout.
 """
 
 import logging
@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 class FailureType:
     """Classify failures to determine breaker behavior."""
 
-    TRANSIENT = "transient"  # timeout, 500, 502, 503 — normal backoff
-    QUOTA = "quota"  # 429, quota exceeded — long disable
-    AUTH = "auth"  # 401, 403 — disable until manual fix
+    TRANSIENT = "transient"  # timeout, 500, empty result — normal backoff
+    QUOTA = "quota"  # 429, quota exceeded
+    AUTH = "auth"  # 401, 403
     UNKNOWN = "unknown"  # default — treat as transient
 
 
@@ -34,12 +34,12 @@ class CircuitBreaker:
     def __init__(
         self,
         failure_threshold: int = 3,
-        base_timeout: float = 3600.0,  # 1 hour
-        multiplier: float = 6.0,  # 1h → 6h → 36h
-        max_timeout: float = 172800.0,  # 48 hours cap
+        base_timeout: float = 300.0,  # 5 minutes
+        multiplier: float = 2.0,
+        max_timeout: float = 3600.0,  # 1 hour cap
         success_threshold: int = 2,
-        quota_timeout: float = 86400.0,  # 24h for quota errors
-        auth_timeout: float = 604800.0,  # 7 days for auth errors
+        quota_timeout: float = 3600.0,  # 1 hour for quota errors
+        auth_timeout: float = 86400.0,  # 1 day for auth errors
     ):
         self.failure_threshold = failure_threshold
         self.base_timeout = base_timeout
@@ -134,10 +134,11 @@ class CircuitBreaker:
         self._current_timeout = timeout
         self._disabled_until = time.monotonic() + timeout
 
-        timeout_hours = timeout / 3600
         logger.warning(
-            f"Circuit breaker OPENED: failure_type={failure_type}, "
-            f"timeout={timeout_hours:.1f}h, trip_count={self._trip_count}"
+            "Circuit breaker OPENED: failure_type=%s, timeout=%.0fs, trip_count=%s",
+            failure_type,
+            timeout,
+            self._trip_count,
         )
 
     def _next_timeout(self) -> float:

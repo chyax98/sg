@@ -9,15 +9,22 @@ from ..core.executor import Executor
 from ..core.history import SearchHistory
 from ..models.config import GatewayConfig
 from ..models.search import (
+    DocsContextRequest,
+    DocsContextResponse,
+    DocsLibrarySearchRequest,
+    DocsLibrarySearchResponse,
     ExtractRequest,
     ExtractResponse,
     ExtractResult,
+    ResearchDepth,
     ResearchRequest,
     ResearchResponse,
     SearchRequest,
     SearchResponse,
 )
+from ..protocol import merge_warnings, project_extract, project_research, project_search
 from ..providers.base import ExtractProvider, ResearchProvider, SearchProvider
+from ..providers.context7 import Context7Provider
 from ..providers.registry import ProviderRegistry
 from .http_server import HTTPServer
 
@@ -84,17 +91,20 @@ class Gateway:
         self,
         query: str,
         provider: str | None = None,
-        max_results: int = 10,
+        limit: int = 10,
         spread_index: int | None = None,
         **kwargs,
     ) -> SearchResponse:
         """Execute search with failover."""
-        request = SearchRequest(query=query, provider=provider, max_results=max_results, **kwargs)
+        request = SearchRequest(query=query, provider=provider, limit=limit, **kwargs)
+        warnings_acc: list[str] = []
 
         async def op(p):
             if not isinstance(p, SearchProvider):
                 raise RuntimeError(f"{p.name} does not support search")
-            return await p.search(request)
+            projected = project_search(request, p.protocol_capability.search)
+            warnings_acc.extend(projected.warnings)
+            return await p.search(projected.request)
 
         response: SearchResponse = await self.executor.execute(
             "search",
@@ -102,6 +112,7 @@ class Gateway:
             provider=provider,
             spread_index=spread_index,
         )
+        response.warnings = merge_warnings(response.warnings, warnings_acc)
         result_file = await self.history.record(request, response)
         response.result_file = result_file
         return response
@@ -110,7 +121,7 @@ class Gateway:
         self,
         queries: list[str],
         provider: str | None = None,
-        max_results: int = 10,
+        limit: int = 10,
         **kwargs,
     ) -> list[SearchResponse]:
         """Execute multiple searches in parallel, spread across providers."""
@@ -119,7 +130,7 @@ class Gateway:
             self.search(
                 q,
                 provider=provider,
-                max_results=max_results,
+                limit=limit,
                 spread_index=i if provider is None else None,
                 **kwargs,
             )
@@ -129,7 +140,7 @@ class Gateway:
 
         results: list[SearchResponse] = []
         for i, r in enumerate(raw_results):
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 logger.error(f"Batch search query '{queries[i]}' failed: {r}")
                 results.append(
                     SearchResponse(
@@ -202,6 +213,7 @@ class Gateway:
             and self.executor.available_group_count("extract") >= 2
         )
 
+        warnings_acc: list[str] = []
         if should_spread:
             # Spread: each URL independently selects a provider
             async def _extract_one(url: str, idx: int) -> ExtractResponse:
@@ -210,9 +222,11 @@ class Gateway:
                 async def op(p):
                     if not isinstance(p, ExtractProvider):
                         raise RuntimeError(f"{p.name} does not support extract")
-                    return await p.extract(request)
+                    projected = project_extract(request, p.protocol_capability.extract)
+                    warnings_acc.extend(projected.warnings)
+                    return await p.extract(projected.request)
 
-                return await self.executor.execute(
+                return await self.executor.execute(  # type: ignore[no-any-return]
                     "extract",
                     op,
                     spread_index=idx,
@@ -226,13 +240,14 @@ class Gateway:
             providers_used: set[str] = set()
             max_latency = 0.0
             for i, resp in enumerate(responses):
-                if isinstance(resp, Exception):
+                if isinstance(resp, BaseException):
                     logger.error(f"Extract URL '{urls[i]}' failed: {resp}")
                     all_results.append(ExtractResult(url=urls[i], content="", error=str(resp)))
                 else:
                     all_results.extend(resp.results)
                     providers_used.add(resp.provider)
                     max_latency = max(max_latency, resp.latency_ms)
+                    warnings_acc.extend(getattr(resp, "warnings", None) or [])
 
             response = ExtractResponse(
                 results=all_results,
@@ -246,11 +261,14 @@ class Gateway:
             async def op(p):
                 if not isinstance(p, ExtractProvider):
                     raise RuntimeError(f"{p.name} does not support extract")
-                return await p.extract(request)
+                projected = project_extract(request, p.protocol_capability.extract)
+                warnings_acc.extend(projected.warnings)
+                return await p.extract(projected.request)
 
             response = await self.executor.execute("extract", op, provider=provider)
 
         response.results = self._normalize_extract_results(urls, response.results)
+        response.warnings = merge_warnings(response.warnings, warnings_acc)
 
         # Save each URL as a separate file with line wrapping
         file_manifest = await self.history.record_extract(
@@ -263,17 +281,21 @@ class Gateway:
         return response
 
     async def research(
-        self, topic: str, depth: str = "auto", provider: str | None = None
+        self, topic: str, depth: ResearchDepth = "auto", provider: str | None = None
     ) -> ResearchResponse:
         """Deep research with failover."""
         request = ResearchRequest(topic=topic, depth=depth)
+        warnings_acc: list[str] = []
 
         async def op(p):
             if not isinstance(p, ResearchProvider):
                 raise RuntimeError(f"{p.name} does not support research")
-            return await p.research(request)
+            projected = project_research(request, p.protocol_capability.research)
+            warnings_acc.extend(projected.warnings)
+            return await p.research(projected.request)
 
         response: ResearchResponse = await self.executor.execute("research", op, provider=provider)
+        response.warnings = merge_warnings(response.warnings, warnings_acc)
 
         # Save to history file
         result_file = await self.history.record_content(
@@ -281,10 +303,59 @@ class Gateway:
             query=topic,
             provider=response.provider,
             latency_ms=response.latency_ms,
-            content=response.content,
+            content=response.report,
         )
         response.result_file = result_file
         return response
+
+    # === Context7 docs side-path (not web search) ===
+
+    async def docs_search(
+        self,
+        library_name: str,
+        query: str,
+        *,
+        fast: bool = False,
+        provider: str | None = None,
+    ) -> DocsLibrarySearchResponse:
+        """Official resolve-library-id. POST /docs/search — multi-key LB only."""
+        request = DocsLibrarySearchRequest(
+            library_name=library_name,
+            query=query,
+            fast=fast,
+        )
+
+        async def op(p):
+            if not isinstance(p, Context7Provider):
+                raise RuntimeError(f"{p.name} does not support docs_search")
+            return await p.docs_search(request)
+
+        # Prefer group name "context7"; else any provider with the capability
+        target = provider
+        if not target and self.providers.has_group("context7"):
+            target = "context7"
+        return await self.executor.execute("docs_search", op, provider=target)  # type: ignore[no-any-return]
+
+    async def docs_context(
+        self,
+        library_id: str,
+        query: str,
+        *,
+        fast: bool = False,
+        provider: str | None = None,
+    ) -> DocsContextResponse:
+        """Official query-docs. POST /docs/context — multi-key LB only."""
+        request = DocsContextRequest(library_id=library_id, query=query, fast=fast)
+
+        async def op(p):
+            if not isinstance(p, Context7Provider):
+                raise RuntimeError(f"{p.name} does not support docs_context")
+            return await p.docs_context(request)
+
+        target = provider
+        if not target and self.providers.has_group("context7"):
+            target = "context7"
+        return await self.executor.execute("docs_context", op, provider=target)  # type: ignore[no-any-return]
 
     # === Status ===
 

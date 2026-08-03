@@ -22,9 +22,10 @@
 
 ## 目录
 
+- [For AI Assistants](#for-ai-assistants)
 - [特性](#特性)
 - [快速开始](#快速开始)
-- [AI Skill 安装](#ai-skill-安装)
+- [集成方案对比](#集成方案对比)
 - [MCP 集成](#mcp-集成claude-desktopcode)
 - [CLI 命令](#cli-命令)
 - [HTTP API](#http-api)
@@ -34,6 +35,33 @@
 - [开发工具](#开发工具)
 - [架构设计](#架构设计)
 - [贡献](#贡献)
+
+## For AI Assistants
+
+如果你是 AI 编码助手在读这份 README，下面是紧凑的能力地图。
+
+| 你想做的事 | 命令 | 文档 |
+|---|---|---|
+| 拿到给 AI 看的使用指南原文 | `search-gateway skill get` | [SKILL.md 打印到 stdout](#skill) |
+| 让 AI 引导式帮我配置 | `search-gateway setup` | [setup prompt](prompts/setup.md) |
+| 接入 OpenCode（websearch / webfetch / context7） | `search-gateway plugin install && search-gateway plugin setup` | [plugins/opencode/README.md](plugins/opencode/README.md) |
+| 启动 daemon | `search-gateway start --daemon` | [docs/install/uv.md](docs/install/uv.md) |
+| 搜索 / 提取 / 研究 | `search-gateway search\|extract\|research ...` | [CLI 命令](#cli-命令) |
+
+**第一条建议**：先跑 `search-gateway skill get` 读一遍 SKILL.md，再决定要哪种集成方式。
+
+## 集成方案对比
+
+| 方案 | 适用场景 | 一行命令 / 配置 |
+|---|---|---|
+| CLI | Shell / 脚本 | `search-gateway search "q"` |
+| HTTP API | 任意语言客户端 | `search-gateway start` → `http://127.0.0.1:8100` |
+| MCP stdio | Claude Code/Desktop、Codex、Kimi、Gemini CLI | `claude mcp add search-gateway stdio search-gateway mcp` |
+| MCP Streamable HTTP | OpenCode remote MCP | `opencode.json` 的 `mcp` 段加 `http://127.0.0.1:8100/mcp` |
+| OpenCode Plugin | opencode 原生工具（覆盖内置 websearch/webfetch） | `search-gateway plugin install && search-gateway plugin setup` |
+| Python SDK | Python 代码内调用 | `from sg.sdk import SearchClient` |
+
+> 各种安装/集成方案的自闭环文档见 `docs/install/`。
 
 ## 快速开始
 
@@ -122,21 +150,13 @@ claude mcp add search-gateway stdio search-gateway mcp
 
 #### 可用工具
 
-MCP 服务器提供以下工具：
+面向任务的三个工具（不暴露路由/provider）：
 
-**search** - 搜索网络
-- 参数：`query`（必需）、`provider`、`max_results`、`include_domains`、`exclude_domains`、`time_range`、`search_depth`
-- 返回：文件路径 + 元数据（大小、行数、字数）
+**search** — 搜网：`query`，可选 `limit` / `domains` / `exclude_domains` / `time_range` / `depth`  
+**extract** — 读页：`urls`，可选 `format`（markdown/text）  
+**research** — 深研简报：`topic`，可选 `depth`（auto/mini/pro）
 
-**extract** - 提取网页内容
-- 参数：`urls`（必需）、`format`（markdown/text）
-- 返回：提取的内容
-
-**research** - 深度研究
-- 参数：`topic`（必需）、`depth`（mini/pro/auto）
-- 返回：研究报告
-
-**list_providers** - 列出所有 provider 及状态
+运维侧看 provider 状态用 CLI/`GET /providers`，不挂在 MCP 工具面上。
 
 ### CLI 命令
 
@@ -161,19 +181,17 @@ search-gateway web          # 打开 Web UI
 search-gateway stop         # 停止网关
 ```
 
-## AI Skill 安装
+## Skill
 
-让 AI 编码助手自动使用 Search Gateway 进行网络搜索，推荐安装 Skill：
+`search-gateway skill get` 是**读取方式**——打印 SKILL.md 原文到 stdout。SKILL 内容打包在包内，谁需要 sg 的使用说明，就直接调用这个命令读取：
 
 ```bash
-# 默认安装到 ~/.agents/skills/search-gateway
-search-gateway skill install
+# AI 助手运行时用 bash 工具调用，从 stdout 直接拿到内容作为上下文
+search-gateway skill get
 
-# 或安装到 Claude Code 的 skills 目录
-search-gateway skill install --path ~/.claude/skills
+# 人想看一眼
+search-gateway skill get | less
 ```
-
-安装后，当 AI 遇到搜索需求时会**自动触发**，优先调用 `search-gateway search` / `research` / `extract`。
 
 ### 开发工具
 
@@ -322,11 +340,19 @@ async with AsyncSearchClient() as client:
         }
       ]
     },
+    "jina": {
+      "type": "jina",
+      "enabled": true,
+      "priority": 70,
+      "selection": "round_robin",
+      "fallback_for": ["extract"],
+      "instances": [{ "id": "jina-1" }]
+    },
     "duckduckgo": {
       "type": "duckduckgo",
       "enabled": true,
       "priority": 100,
-      "selection": "random",
+      "selection": "round_robin",
       "fallback_for": ["search"],
       "defaults": { "timeout": 30000 },
       "instances": [{ "id": "duckduckgo" }]
@@ -335,64 +361,44 @@ async with AsyncSearchClient() as client:
   "executor": {
     "health_check": { "failure_threshold": 3, "success_threshold": 2 },
     "circuit_breaker": {
-      "base_timeout": 3600,
-      "multiplier": 6,
-      "max_timeout": 172800,
-      "quota_timeout": 86400,
-      "auth_timeout": 604800
+      "base_timeout": 300,
+      "multiplier": 2,
+      "max_timeout": 3600,
+      "quota_timeout": 3600,
+      "auth_timeout": 86400
     },
-    "failover": { "max_attempts": 3 }
+    "failover": { "max_attempts": 0 }
   },
   "history": { "dir": "~/.sg/history" }
 }
 ```
 
-**说明**：
-- `providers.<name>`: provider group，共享类型和通用配置
-- `instances`: 该 provider 下的多个具体实例
-- `selection`: provider 内实例选择策略（`random` / `round_robin` / `priority`），默认 `random`
-- `priority`: provider group 的全局优先级，**数值越小优先级越高**
-- `instances[].priority`: 仅用于 provider 内 `priority` 选择策略
-- `fallback_for`: 兜底 provider group，所有其他 provider 都失败后使用
-- `circuit_breaker.base_timeout`: 第一次熔断多久后允许探测
-- `circuit_breaker.multiplier`: 连续熔断时的退避倍数
-- `circuit_breaker.quota_timeout`: 配额耗尽时禁用多久（429 错误）
-- `circuit_breaker.auth_timeout`: 认证失败时禁用多久（401/403 错误）
-- `failover.max_attempts`: 一次请求最多尝试多少个 provider group
+**说明**（本地、白嫖 key 场景）：
+- `providers.<name>`: provider **组**；`instances` 是组内多把 key
+- `selection`: 组内选实例 — 白嫖 key 推荐 `round_robin`（轮询分摊额度）
+- `priority`: 组优先级，**越小越先试**；组失败再试下一组
+- `fallback_for`: 能力兜底（如 DDG→`search`，Jina→`extract`），主链路都挂了才用
+- `failover.max_attempts`: 一次请求最多试几个 **组**；`0` = 试完全部候选组（推荐）
+- 空结果（`results=[]` / extract 全空或全错 / research 空报告）视为失败，会换 key/换组
+- `circuit_breaker.*`: 连续失败后短冷却（默认分钟级），不是多日报废
 
 ## 路由架构
 
-Search Gateway 使用**两层路由架构**：
+本地小工具两层路由：
 
-### 第一层：Provider Group 选择
+### 第一层：Provider Group（失败切换）
 
-- **严格按 priority 排序**（数字越小优先级越高）
-- 总是从最高优先级的 Group 开始
-- 失败时自动 failover 到下一个优先级的 Group
-- 最多尝试 `failover.max_attempts` 个 Group
+- 按 `priority` 从小到大试
+- 抛错、空结果、熔断跳过 → 换下一组
+- `max_attempts: 0` 时扫完全部组，再走 `fallback_for`
 
-**示例：**
-```json
-{
-  "providers": {
-    "exa": { "priority": 1 },      // 最高优先级，总是先尝试
-    "tavily": { "priority": 2 },   // 次优先级，exa 失败时才用
-    "youcom": { "priority": 4 },   // 更低优先级
-    "duckduckgo": {
-      "priority": 100,
-      "fallback_for": ["search"]   // 兜底，所有其他都失败时使用
-    }
-  }
-}
-```
+### 第二层：Instance（组内轮询）
 
-### 第二层：Instance 选择（Group 内负载均衡）
+同一组多把免费 key 时用 `selection`：
 
-在同一个 Provider Group 内，使用 `provider.selection` 策略选择具体的 Instance：
-
-- **`priority`**：总是选择最高优先级（priority 最小）的 Instance
-- **`round_robin`**：按 priority 排序后轮询，分散负载
-- **`random`**：随机选择可用的 Instance
+- **`round_robin`**：轮询（白嫖 key 推荐）
+- **`random`**：随机
+- **`priority`**：总用组内最高优先级实例
 
 **示例：**
 ```json

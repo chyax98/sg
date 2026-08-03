@@ -2,7 +2,11 @@
 
 import asyncio
 import os
+import platform
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -14,7 +18,20 @@ from ._utils import ensure_gateway_running
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli():
-    """Search Gateway — unified search with failover."""
+    """Search Gateway — unified search with failover.
+
+    \b
+    使用指南：
+      search-gateway skill get             打印 SKILL.md 原文到 stdout（AI 助手视角）
+      search-gateway setup                 输出 AI 配置向导 prompt（交互式引导）
+      search-gateway plugin install        装 opencode 插件到 ~/.config/opencode/plugins/
+      search-gateway plugin setup          把 plugin 引用写入 opencode.json（idempotent）
+      search-gateway init                  初始化 ~/.sg/config.json
+
+    \b
+    完整文档：https://github.com/chyax98/sg
+    安装方案：docs/install/{uv,source,macos-daemon}.md
+    """
     pass
 
 
@@ -214,9 +231,7 @@ def _print_result_file(data: dict) -> None:
 @click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
-@click.option(
-    "--include-domain", "include_domains", multiple=True, help="Restrict search to a domain"
-)
+@click.option("--include-domain", "domains", multiple=True, help="Restrict search to a domain")
 @click.option(
     "--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search"
 )
@@ -226,20 +241,16 @@ def _print_result_file(data: dict) -> None:
     type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]),
     default="basic",
 )
-@click.option(
-    "--extra", "-e", default=None, help='Extra params as JSON (e.g. \'{"location":"CN"}\')'
-)
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
     queries: tuple[str, ...],
     provider: str | None,
     max: int,
-    include_domains: tuple[str, ...],
+    domains: tuple[str, ...],
     exclude_domains: tuple[str, ...],
     time_range: str | None,
-    search_depth: str,
-    extra: str | None,
+    depth: str,
     port: int,
     config: str | None,
 ):
@@ -247,24 +258,13 @@ def search(
     # Ensure gateway is running, start if needed
     _ensure_gateway_or_exit(port, config)
 
-    import json
-
-    extra_dict = {}
-    if extra:
-        try:
-            extra_dict = json.loads(extra)
-        except json.JSONDecodeError:
-            click.echo(f"Error: Invalid JSON in --extra: {extra}", err=True)
-            sys.exit(1)
-
     payload = {
         "provider": provider,
-        "max_results": max,
-        "include_domains": list(include_domains),
+        "limit": max,
+        "domains": list(domains),
         "exclude_domains": list(exclude_domains),
         "time_range": time_range,
-        "search_depth": search_depth,
-        "extra": extra_dict,
+        "depth": depth,
     }
 
     try:
@@ -634,13 +634,14 @@ description: >
 
 # Search Gateway
 
-## 执行检查点
+本机装了 search-gateway，遇到搜索/提取/研究需求**优先**用它（聚合多引擎、自动故障转移、本地无限制）。
 
-- [ ] `search` / `extract` / `research` 的完整内容已在命令输出里，**直接使用**，不必再读历史文件
-- [ ] 不要主动指定 `-p provider`，让自动故障转移工作
-- [ ] 如果命令报错网关未启动，重试一次（CLI 会自动后台启动）
+## 先决条件
 
-## 核心命令
+- `search-gateway status` 显示 running；没跑就 `search-gateway start --daemon`
+- 首次使用：`search-gateway init` 创建 `~/.sg/config.json`（不配 key 默认用 DuckDuckGo）
+
+## 核心命令（CLI 直接用）
 
 | 场景 | 命令 |
 |------|------|
@@ -655,17 +656,41 @@ description: >
 | 更深入研究 | `search-gateway research "topic" -d pro` |
 | 查看状态 | `search-gateway status` |
 
+## 集成到 AI 工具（按场景选一种）
+
+| 场景 | 命令 / 配置 |
+|---|---|
+| OpenCode 原生 plugin（websearch / webfetch / context7） | `search-gateway plugin install && search-gateway plugin setup` |
+| OpenCode remote MCP | `opencode.json` 的 `mcp` 段加 `http://127.0.0.1:8100/mcp`（`type: remote`, `oauth: false`） |
+| Claude Code MCP | `claude mcp add search-gateway stdio search-gateway mcp` |
+| Codex / Kimi（TOML） | `[mcp_servers.search-gateway]` `command = "search-gateway"` `args = ["mcp"]` |
+| Gemini CLI（JSON） | `~/.gemini/settings.json` 的 `mcpServers.search-gateway` |
+| HTTP API（任意语言） | `search-gateway start` 后 POST `http://127.0.0.1:8100/{search,extract,research}` |
+| Python SDK | `from sg.sdk import SearchClient` |
+
+## macOS daemon 自启（可选）
+
+让 sg 开机自启、崩溃拉起，OpenCode plugin / MCP 常驻依赖建议配：
+
+- 仓库内：`make install-launchd`
+- 详细步骤：`docs/install/macos-daemon.md`
+
+## AI 引导式配置（可选）
+
+`search-gateway setup` 输出交互式配置向导 prompt（带用户配 provider API key、选集成方式）。
+
 ## Known Gotchas
 
-- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，用输出作答即可。
-- **不要手动指定 provider**：自动路由已配置多 provider 故障转移，手动 `-p tavily` 等会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
-- **网关未启动时自动启动**：首次调用可能因后台启动而稍慢，如果收到 "Gateway not running"，等待 3-5 秒后重试即可。
+- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，**直接用输出作答**，不要再读历史文件。
+- **不要手动指定 provider**：自动路由已配多 provider 故障转移，手动 `-p tavily` 会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
+- **网关未启动时自动启动**：首次调用可能因后台启动稍慢，若收到 "Gateway not running"，等 3-5 秒重试。
 - **搜完别乱 extract**：用 search 的 snippet 答题；只有用户明确要整页正文时才 `extract` 给定 URL。
 
-## MCP 集成（可选）
+## 更多
 
-如果当前 AI 工具支持 MCP，可配置原生工具调用：
-- Claude Code: `claude mcp add search-gateway stdio search-gateway mcp`
+- 完整文档：https://github.com/chyax98/sg
+- 安装方案：`docs/install/{uv,source,macos-daemon}.md`
+- 集成方案对比：README.md "集成方案对比" 段
 """
 
 
@@ -675,29 +700,358 @@ def skill():
     pass
 
 
-@skill.command(name="install")
+@cli.group()
+def plugin():
+    """Manage opencode/IDE plugins."""
+    pass
+
+
+@plugin.command(name="install")
 @click.option(
     "--path",
     "-p",
     default=None,
-    help="Skills root directory (default: ~/.agents/skills)",
+    help="Plugins directory (default: ~/.config/opencode/plugins)",
 )
-def skill_install(path: str | None):
-    """Install Search Gateway skill for AI assistants."""
-    skills_dir = Path(path).expanduser() if path else Path.home() / ".agents" / "skills"
-    target = skills_dir / "search-gateway"
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing files")
+def plugin_install(path: str | None, force: bool):
+    """Install OpenCode plugins (websearch/webfetch/context7) to local opencode."""
+    plugins_dir = (
+        Path(path).expanduser() if path else Path.home() / ".config" / "opencode" / "plugins"
+    )
+    plugins_dir.mkdir(parents=True, exist_ok=True)
 
-    if not click.confirm(f"Install skill to {target}?"):
-        click.echo("Cancelled.")
+    # Wheel: sg/_plugins_data/; dev/editable: <repo>/plugins/opencode/
+    src_candidates = [
+        Path(__file__).resolve().parent / "_plugins_data",
+        Path(__file__).resolve().parent.parent.parent / "plugins" / "opencode",
+    ]
+    src_dir = next((p for p in src_candidates if p.is_dir()), None)
+    if not src_dir:
+        click.echo(f"Error: plugin sources not found (tried {src_candidates})", err=True)
+        sys.exit(1)
+
+    targets = ["search-gateway-web.js", "search-gateway-context7.js"]
+    installed: list[Path] = []
+    skipped: list[Path] = []
+    for name in targets:
+        src = src_dir / name
+        if not src.is_file():
+            click.echo(f"Error: missing plugin source {name}", err=True)
+            sys.exit(1)
+        dst = plugins_dir / name
+        if dst.exists() and not force:
+            skipped.append(dst)
+            continue
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        installed.append(dst)
+
+    click.echo(f"\n✓ Installed {len(installed)} plugin(s) to {plugins_dir}:")
+    for p in installed:
+        click.echo(f"  - {p.name}")
+    if skipped:
+        click.echo("\nSkipped (already exist, use --force to overwrite):")
+        for p in skipped:
+            click.echo(f"  - {p.name}")
+
+    click.echo("\nNext: add to opencode.json plugin array, then restart opencode.")
+
+
+@skill.command(name="get")
+@click.argument("name", required=False, default="search-gateway")
+def skill_get(name: str):
+    """Print SKILL.md content to stdout.
+
+    SKILL 内容打包在包内；AI 助手运行时直接调用读取 stdout。
+    """
+    available = {"search-gateway": _SKILL_MD}
+    content = available.get(name)
+    if content is None:
+        click.echo(
+            f"Error: unknown skill '{name}'. Available: {', '.join(sorted(available))}",
+            err=True,
+        )
+        sys.exit(1)
+    click.echo(content, nl=False)
+
+
+@plugin.command(name="setup")
+@click.option(
+    "--config",
+    "-c",
+    default=None,
+    help="opencode.json path (default: ~/.config/opencode/opencode.json)",
+)
+def plugin_setup(config: str | None):
+    """Add Search Gateway plugin entries to opencode.json (idempotent)."""
+    import json
+
+    config_path = (
+        Path(config).expanduser()
+        if config
+        else Path.home() / ".config" / "opencode" / "opencode.json"
+    )
+    if not config_path.is_file():
+        click.echo(f"Error: {config_path} not found", err=True)
+        sys.exit(1)
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: invalid JSON in {config_path}: {e}", err=True)
+        sys.exit(1)
+
+    existing = data.get("plugin", [])
+    if not isinstance(existing, list):
+        click.echo("Error: 'plugin' field is not a list in opencode.json", err=True)
+        sys.exit(1)
+
+    plugins_dir = Path.home() / ".config" / "opencode" / "plugins"
+    targets = [
+        str(plugins_dir / "search-gateway-web.js"),
+        str(plugins_dir / "search-gateway-context7.js"),
+    ]
+
+    def _entry_path(entry: object) -> str | None:
+        if isinstance(entry, str):
+            return entry
+        if isinstance(entry, list) and entry:
+            first = entry[0]
+            return first if isinstance(first, str) else None
+        return None
+
+    existing_paths = {_entry_path(e) for e in existing}
+    added = [t for t in targets if t not in existing_paths]
+
+    if not added:
+        click.echo(f"✓ All Search Gateway plugins already referenced in {config_path}")
         return
 
-    target.mkdir(parents=True, exist_ok=True)
-    skill_file = target / "SKILL.md"
-    skill_file.write_text(_SKILL_MD, encoding="utf-8")
+    data["plugin"] = [*existing, *added]
+    config_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    click.echo(f"✓ Added {len(added)} plugin(s) to {config_path}:")
+    for p in added:
+        click.echo(f"  - {Path(p).name}")
+    click.echo("\nRestart opencode to load the plugins.")
 
-    click.echo(f"\n✓ Skill installed: {skill_file}")
-    click.echo("\nSupported AI tools will now automatically use search-gateway for web search.")
-    click.echo("\nTip: Restart your AI coding assistant to load the new skill.")
+
+# ============================================================
+# daemon group: macOS launchd 自启 / Linux & Windows 占位
+# ============================================================
+
+_DAEMON_LABEL = "com.search-gateway"
+_PLIST_PRINT_KEYS = ("state", "pid", "last exit code", "path =")
+_PLIST_DEFAULT_PORT = 8100
+
+
+def _gen_plist(bin_path: str, home: str, port: int) -> str:
+    """Generate launchd plist content with runtime paths (no hardcoded usernames)."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_DAEMON_LABEL}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin_path}</string>
+        <string>start</string>
+        <string>--port</string>
+        <string>{port}</string>
+        <string>--log-level</string>
+        <string>INFO</string>
+        <string>--log-file</string>
+        <string>{home}/.sg/logs/gateway.log</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{home}/.sg</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{home}/.sg/logs/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{home}/.sg/logs/launchd-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{home}</string>
+        <key>PYTHONWARNINGS</key>
+        <string>ignore::DeprecationWarning</string>
+    </dict>
+</dict>
+</plist>
+"""
+
+
+def _lc(cmd: list[str]) -> subprocess.CompletedProcess:
+    """Run launchctl / shell command, capture output, never raise."""
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def _bootout(label: str) -> None:
+    uid = os.getuid()
+    _lc(["launchctl", "bootout", f"gui/{uid}/{label}"])
+
+
+def _bootstrap(plist_path: Path) -> subprocess.CompletedProcess:
+    uid = os.getuid()
+    return _lc(["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)])
+
+
+def _enable(label: str) -> None:
+    uid = os.getuid()
+    _lc(["launchctl", "enable", f"gui/{uid}/{label}"])
+
+
+def _http_status_ok(port: int = _PLIST_DEFAULT_PORT) -> bool:
+    try:
+        r = httpx.get(f"http://127.0.0.1:{port}/status", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _require_macos(action: str) -> None:
+    if platform.system() != "Darwin":
+        click.echo(
+            f"Error: daemon {action} on {platform.system()} not yet supported. "
+            f"Run 'search-gateway start --daemon' manually instead.",
+            err=True,
+        )
+        sys.exit(1)
+
+
+@cli.group()
+def daemon():
+    """Manage daemon auto-start (macOS launchd; Linux/Windows TBD)."""
+    pass
+
+
+@daemon.command(name="install")
+@click.option("--port", "-p", default=_PLIST_DEFAULT_PORT, help="Gateway port")
+@click.option("--force", "-f", is_flag=True, help="Reinstall even if already installed")
+def daemon_install(port: int, force: bool):
+    """Install daemon auto-start (macOS: launchd)."""
+    _require_macos("install")
+
+    bin_path = shutil.which("search-gateway")
+    if not bin_path:
+        click.echo("Error: search-gateway not found in PATH", err=True)
+        sys.exit(1)
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    (home / ".sg" / "logs").mkdir(parents=True, exist_ok=True)
+
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+
+    # Idempotent: 已装且未要求 force 就跳过
+    if plist_path.exists() and not force:
+        click.echo(f"✓ Already installed at {plist_path}")
+        click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
+        return
+
+    # 若已装，先 bootout 旧实例
+    if plist_path.exists():
+        _bootout(_DAEMON_LABEL)
+
+    # 停掉非 launchd 托管的旧 daemon，避免端口冲突
+    _lc(["search-gateway", "stop"])
+    time.sleep(1)
+
+    # 生成并写 plist
+    plist_path.write_text(_gen_plist(bin_path, str(home), port), encoding="utf-8")
+
+    # bootstrap + enable
+    r = _bootstrap(plist_path)
+    if r.returncode != 0:
+        click.echo(f"Error: launchctl bootstrap failed: {r.stderr.strip()}", err=True)
+        sys.exit(1)
+    _enable(_DAEMON_LABEL)
+
+    # 验证
+    time.sleep(2)
+    if _http_status_ok(port):
+        click.echo(f"✓ Daemon installed and running at http://127.0.0.1:{port}")
+        click.echo(f"  plist: {plist_path}")
+        click.echo(f"  logs:  {home}/.sg/logs/launchd-{{stdout,stderr}}.log")
+    else:
+        click.echo(
+            "⚠ Daemon plist installed but /status not responding. Check:\n"
+            f"  tail -20 {home}/.sg/logs/launchd-stderr.log",
+            err=True,
+        )
+        sys.exit(1)
+
+
+@daemon.command(name="uninstall")
+def daemon_uninstall():
+    """Uninstall daemon auto-start."""
+    _require_macos("uninstall")
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+    if plist_path.exists():
+        _bootout(_DAEMON_LABEL)
+        plist_path.unlink(missing_ok=True)
+        click.echo(f"✓ Removed {_DAEMON_LABEL}")
+    else:
+        click.echo("Nothing to uninstall.")
+
+
+@daemon.command(name="status")
+def daemon_status():
+    """Show daemon auto-start status."""
+    _require_macos("status")
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+
+    if not plist_path.exists():
+        click.echo(f"Daemon auto-start NOT installed (expected {plist_path}).")
+        click.echo("  Run 'search-gateway daemon install' to enable.")
+        return
+
+    uid = os.getuid()
+    r = _lc(["launchctl", "print", f"gui/{uid}/{_DAEMON_LABEL}"])
+    if r.returncode == 0:
+        click.echo(f"Label:   {_DAEMON_LABEL}")
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            for key in _PLIST_PRINT_KEYS:
+                if stripped.startswith(key):
+                    click.echo(f"  {stripped}")
+                    break
+    else:
+        click.echo(f"plist exists but label not loaded: {r.stderr.strip()}")
+
+    if _http_status_ok():
+        click.echo("HTTP /status: ✓ running")
+    else:
+        click.echo("HTTP /status: ✗ not responding")
 
 
 if __name__ == "__main__":

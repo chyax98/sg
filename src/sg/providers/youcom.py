@@ -1,6 +1,8 @@
 """You.com provider — raw httpx (SDK is beta/auto-generated)."""
 
+import re
 import time
+from html.parser import HTMLParser
 
 import httpx
 
@@ -15,6 +17,45 @@ from ..models.search import (
 from .base import ExtractProvider, ProviderInfo, SearchProvider
 
 
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in ("script", "style", "noscript"):
+            self._skip += 1
+        elif tag in ("p", "br", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style", "noscript") and self._skip:
+            self._skip -= 1
+        elif tag in ("p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip and data:
+            self._parts.append(data)
+
+    def text(self) -> str:
+        raw = "".join(self._parts)
+        raw = re.sub(r"[ \t]+", " ", raw)
+        raw = re.sub(r"\n{3,}", "\n\n", raw)
+        return raw.strip()
+
+
+def _html_to_text(html: str) -> str:
+    parser = _HTMLTextExtractor()
+    try:
+        parser.feed(html or "")
+        parser.close()
+    except Exception:
+        return re.sub(r"<[^>]+>", " ", html or "").strip()
+    return parser.text()
+
+
 class YouComProvider(SearchProvider, ExtractProvider):
     """You.com: high accuracy AI search (93% SimpleQA).
 
@@ -26,7 +67,7 @@ class YouComProvider(SearchProvider, ExtractProvider):
         type="youcom",
         display_name="You.com",
         capabilities=("search", "extract"),
-        search_features=("include_domains", "exclude_domains", "time_range"),
+        search_features=("domains", "exclude_domains", "time_range", "language"),
     )
 
     BASE_URL = "https://ydc-index.io"
@@ -70,10 +111,10 @@ class YouComProvider(SearchProvider, ExtractProvider):
 
         query = self.apply_domain_operators(
             request.query,
-            request.include_domains,
+            request.domains,
             request.exclude_domains,
         )
-        params: dict[str, str | int] = {"query": query, "count": request.max_results}
+        params: dict[str, str | int] = {"query": query, "count": request.limit}
         if request.time_range:
             freshness_map = {
                 "day": "day",
@@ -83,10 +124,8 @@ class YouComProvider(SearchProvider, ExtractProvider):
             }
             if request.time_range in freshness_map:
                 params["freshness"] = freshness_map[request.time_range]
-        if request.extra.get("language"):
-            lang = request.extra["language"]
-            if isinstance(lang, str):
-                params["language"] = lang
+        if request.language:
+            params["language"] = request.language
 
         resp = await self._client.get("/v1/search", params=params)
         resp.raise_for_status()
@@ -104,9 +143,9 @@ class YouComProvider(SearchProvider, ExtractProvider):
                 SearchResult(
                     title=item.get("title", ""),
                     url=item.get("url", ""),
-                    content=content.strip(),
+                    snippet=content.strip(),
                     source=self.name,
-                    published_date=item.get("page_age"),
+                    published_at=item.get("page_age"),
                 )
             )
 
@@ -135,12 +174,36 @@ class YouComProvider(SearchProvider, ExtractProvider):
         data = resp.json()
 
         results = []
-        for item in data:  # Response is a list
+        items = (
+            data
+            if isinstance(data, list)
+            else data.get("results", []) or data.get("data", []) or []
+        )
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url", "")
+            err = item.get("error") or item.get("message")
+            if err and not (item.get("html") or item.get("text") or item.get("markdown")):
+                results.append(ExtractResult(url=url, content="", error=str(err)))
+                continue
+
+            if request.format == "html":
+                content = item.get("html") or item.get("text") or ""
+            else:
+                content = (
+                    item.get("markdown")
+                    or item.get("text")
+                    or _html_to_text(item.get("html") or "")
+                )
+            if not str(content).strip():
+                results.append(ExtractResult(url=url, content="", error="empty extract"))
+                continue
             results.append(
                 ExtractResult(
-                    url=item.get("url", ""),
-                    content=item.get("html", ""),
-                    title=None,  # You.com doesn't return title in contents
+                    url=url,
+                    content=content,
+                    title=item.get("title"),
                 )
             )
 

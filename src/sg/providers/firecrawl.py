@@ -1,30 +1,28 @@
-"""Firecrawl provider — uses official firecrawl-py SDK."""
+"""Firecrawl adapter — official firecrawl-py v2."""
+
+from __future__ import annotations
 
 import asyncio
 import time
+from typing import Any
 
-from ..models.search import (
-    ExtractRequest,
-    ExtractResponse,
-    ExtractResult,
-    SearchRequest,
-    SearchResponse,
-    SearchResult,
-)
-from .base import ExtractProvider, ProviderInfo, SearchProvider
+from ..models.search import ExtractRequest, ExtractResponse, SearchRequest, SearchResponse
+from ._assemble import attr, make_hit, make_page, optional_list, text
+from .base import ExtractProvider, ProviderInfo, SearchProvider, cap, extract_cap, search_cap
+
+_TBS = {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"}
 
 
 class FirecrawlProvider(SearchProvider, ExtractProvider):
-    """Firecrawl: search + content extraction with clean markdown.
-
-    Free 500/month.
-    """
-
     info = ProviderInfo(
         type="firecrawl",
         display_name="Firecrawl",
-        capabilities=("search", "extract"),
-        search_features=("include_domains", "exclude_domains", "time_range"),
+        capability=cap(
+            search=search_cap(domains=True, exclude_domains=True, time_range=True, location=True),
+            extract=extract_cap(
+                formats=("markdown", "html", "text"), multi_url=True, only_main=True
+            ),
+        ),
     )
 
     def __init__(self, **kwargs):
@@ -37,7 +35,7 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
             return False
         from firecrawl import AsyncFirecrawl
 
-        self._client = AsyncFirecrawl(api_key=self.api_key)
+        self._client = AsyncFirecrawl(api_key=self.api_key, timeout=max(5.0, self.timeout / 1000))
         return True
 
     async def shutdown(self) -> None:
@@ -54,58 +52,34 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
         self.validate_search_request(request)
 
         start = time.perf_counter()
+        kwargs: dict[str, Any] = {"query": request.query, "limit": request.limit}
+        if include := optional_list(request.domains):
+            kwargs["include_domains"] = include
+        if exclude := optional_list(request.exclude_domains):
+            kwargs["exclude_domains"] = exclude
+        if request.time_range in _TBS:
+            kwargs["tbs"] = _TBS[request.time_range]
+        if request.location:
+            kwargs["location"] = request.location
 
-        query = self.apply_domain_operators(
-            request.query,
-            request.include_domains,
-            request.exclude_domains,
-        )
-        kwargs = {
-            "query": query,
-            "limit": request.max_results,
-        }
-        if request.time_range:
-            tbs_map = {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"}
-            if request.time_range in tbs_map:
-                kwargs["tbs"] = tbs_map[request.time_range]
-
-        data = await self._client.search(
-            **kwargs,
-        )
+        data = await self._client.search(**kwargs)
         latency = (time.perf_counter() - start) * 1000
-
-        items = data if isinstance(data, list) else data.get("data", data.get("results", []))
-        results = []
-        for item in items:
-            if isinstance(item, dict):
-                results.append(
-                    SearchResult(
-                        title=item.get("title") or "",
-                        url=item.get("url") or item.get("link") or "",
-                        content=item.get("markdown")
-                        or item.get("content")
-                        or item.get("description")
-                        or "",
-                        snippet=item.get("description") or "",
-                        score=float(item.get("score", 0)),
-                        source=self.name,
-                    )
-                )
-            else:
-                results.append(
-                    SearchResult(
-                        title=getattr(item, "title", "") or "",
-                        url=getattr(item, "url", "") or "",
-                        content=getattr(item, "markdown", "") or getattr(item, "content", "") or "",
-                        source=self.name,
-                    )
-                )
-
+        items = self._items(data)[: request.limit]
+        hits = [
+            make_hit(
+                title=attr(item, "title"),
+                url=attr(item, "url", "link"),
+                snippet=attr(item, "description", "markdown", "content", "text"),
+                score=attr(item, "score", "position", default=0.0),
+                source=self.name,
+            )
+            for item in items
+        ]
         return SearchResponse(
             query=request.query,
             provider=self.name,
-            results=results[: request.max_results],
-            total=len(results),
+            results=hits,
+            total=len(hits),
             latency_ms=latency,
         )
 
@@ -114,21 +88,42 @@ class FirecrawlProvider(SearchProvider, ExtractProvider):
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
+        fmt = request.format if request.format in ("markdown", "html") else "markdown"
+        scrape_kwargs: dict[str, Any] = {
+            "formats": ["markdown"] if request.format == "text" else [fmt]
+        }
+        if request.only_main is not None:
+            scrape_kwargs["only_main_content"] = bool(request.only_main)
 
-        async def _scrape_one(url: str) -> ExtractResult:
+        async def one(url: str):
             try:
-                data = await self._client.scrape_url(url, formats=["markdown"])
-                if isinstance(data, dict):
-                    content = data.get("markdown", data.get("data", {}).get("markdown", ""))
-                    title = data.get("metadata", {}).get("title", "")
-                else:
-                    content = getattr(data, "markdown", "") or ""
-                    title = ""
-                return ExtractResult(url=url, content=content, title=title)
+                doc = await self._client.scrape(url, **scrape_kwargs)  # type: ignore[union-attr]
+                body = text(attr(doc, "markdown", "html", "raw_html", "content", "text"))
+                meta = attr(doc, "metadata")
+                title = text(attr(meta, "title"), attr(doc, "title"))
+                return make_page(url=url, content=body, title=title or None)
             except Exception as e:
-                return ExtractResult(url=url, content="", error=str(e))
+                return make_page(url=url, error=str(e))
 
-        results = await asyncio.gather(*[_scrape_one(url) for url in request.urls])
+        pages = list(await asyncio.gather(*[one(u) for u in request.urls]))
+        return ExtractResponse(
+            results=pages,
+            provider=self.name,
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )
 
-        latency = (time.perf_counter() - start) * 1000
-        return ExtractResponse(results=list(results), provider=self.name, latency_ms=latency)
+    @staticmethod
+    def _items(data: Any) -> list[Any]:
+        if data is None:
+            return []
+        if isinstance(data, list):
+            return data
+        web = attr(data, "web")
+        if web:
+            return list(web)
+        if isinstance(data, dict):
+            for key in ("data", "results", "web"):
+                val = data.get(key)
+                if isinstance(val, list):
+                    return val
+        return []

@@ -1,20 +1,19 @@
 """Tests for Executor."""
 
 import asyncio
-from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sg.core.circuit_breaker import CircuitBreaker
-from sg.core.executor import Executor, ProviderMetrics
+from sg.core.circuit_breaker import CircuitBreaker, FailureType
+from sg.core.executor import Executor, ProviderMetrics, _classify_error, _result_is_unusable
 from sg.models.config import (
     CircuitBreakerConfig,
     ExecutorConfig,
     FailoverConfig,
     HealthCheckConfig,
 )
-from sg.models.search import SearchRequest, SearchResponse
+from sg.models.search import SearchHit, SearchRequest, SearchResponse
 from sg.providers.base import ProviderInfo, SearchProvider
 from sg.providers.registry import ProviderRegistry
 
@@ -30,9 +29,18 @@ class FakeProvider(SearchProvider):
         capabilities=("search",),
     )
 
-    def __init__(self, name="fake", *, should_fail=False, priority=10, **kwargs):
+    def __init__(
+        self,
+        name="fake",
+        *,
+        should_fail=False,
+        empty=False,
+        priority=10,
+        **kwargs,
+    ):
         super().__init__(name=name, priority=priority, **kwargs)
         self.should_fail = should_fail
+        self.empty = empty
 
     async def initialize(self) -> bool:
         return True
@@ -44,11 +52,21 @@ class FakeProvider(SearchProvider):
         self.validate_search_request(request)
         if self.should_fail:
             raise RuntimeError(f"{self.name} failed")
+        hits = []
+        if not self.empty:
+            hits = [
+                SearchHit(
+                    title=f"{self.name} hit",
+                    url=f"https://example.com/{self.name}",
+                    snippet="ok",
+                    source=self.name,
+                )
+            ]
         return SearchResponse(
             query=request.query,
             provider=self.name,
-            results=[],
-            total=0,
+            results=hits,
+            total=len(hits),
             latency_ms=10.0,
         )
 
@@ -60,7 +78,7 @@ class DomainAwareProvider(FakeProvider):
         needs_api_key=False,
         free=True,
         capabilities=("search",),
-        search_features=("include_domains",),
+        search_features=("domains",),
     )
 
 
@@ -150,6 +168,41 @@ class TestExecuteBasic:
 
         result = await executor.execute("search", op)
         assert result.provider == "secondary-1"
+
+    @pytest.mark.asyncio
+    async def test_execute_failover_on_empty_results(self):
+        registry = _make_registry(
+            {
+                "primary": [FakeProvider(name="primary-1", empty=True)],
+                "secondary": [FakeProvider(name="secondary-1")],
+            }
+        )
+        executor = Executor(_make_config(), registry)
+
+        async def op(provider):
+            return await provider.search(SearchRequest(query="test"))
+
+        result = await executor.execute("search", op)
+        assert result.provider == "secondary-1"
+        assert len(result.results) == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_tries_all_groups_when_max_attempts_unlimited(self):
+        registry = _make_registry(
+            {
+                "g1": [FakeProvider(name="g1", should_fail=True)],
+                "g2": [FakeProvider(name="g2", should_fail=True)],
+                "g3": [FakeProvider(name="g3", should_fail=True)],
+                "g4": [FakeProvider(name="g4")],
+            }
+        )
+        executor = Executor(_make_config(failover=FailoverConfig(max_attempts=0)), registry)
+
+        async def op(provider):
+            return await provider.search(SearchRequest(query="test"))
+
+        result = await executor.execute("search", op)
+        assert result.provider == "g4"
 
     @pytest.mark.asyncio
     async def test_execute_retries_other_instance_in_same_group(self):
@@ -383,7 +436,7 @@ class TestExecuteCircuitBreaker:
             }
         )
         executor = Executor(_make_config(), registry)
-        request = SearchRequest(query="test", include_domains=["example.com"])
+        request = SearchRequest(query="test", domains=["example.com"])
 
         async def op(provider):
             return await provider.search(request)
@@ -395,7 +448,7 @@ class TestExecuteCircuitBreaker:
     async def test_explicit_provider_raises_on_unsupported_search_params(self):
         registry = _make_registry({"plain": [FakeProvider(name="plain-1")]})
         executor = Executor(_make_config(), registry)
-        request = SearchRequest(query="test", include_domains=["example.com"])
+        request = SearchRequest(query="test", domains=["example.com"])
 
         async def op(provider):
             return await provider.search(request)
@@ -412,7 +465,7 @@ class TestExecuteCircuitBreaker:
             }
         )
         executor = Executor(_make_config(), registry)
-        request = SearchRequest(query="test", include_domains=["example.com"])
+        request = SearchRequest(query="test", domains=["example.com"])
 
         async def op(provider):
             return await provider.search(request)
@@ -497,12 +550,31 @@ class TestHealthChecks:
 
         assert "healthy-1" in result["healthy"]
         assert any(item["name"] == "unhealthy-1" for item in result["unhealthy"])
-        assert executor._breaker("healthy-1").state == CircuitBreaker.CLOSED
+        # Noop health must not resurrect OPEN breakers
+        assert executor._breaker("healthy-1").state == CircuitBreaker.OPEN
 
     def test_get_breaker_state(self):
         registry = _make_registry({})
         executor = Executor(_make_config(), registry)
         assert executor.get_breaker_state("new-provider") == CircuitBreaker.CLOSED
+
+
+class TestErrorAndEmptyHelpers:
+    def test_classify_status_in_message(self):
+        assert _classify_error(RuntimeError("Error code: 401")) == FailureType.AUTH
+        assert _classify_error(RuntimeError("HTTP 429 rate limit")) == FailureType.QUOTA
+        assert _classify_error(TimeoutError("time exceeded")) == FailureType.TRANSIENT
+
+    def test_empty_search_is_unusable(self):
+        empty = SearchResponse(query="q", provider="p", results=[], total=0)
+        assert _result_is_unusable(empty) is True
+        ok = SearchResponse(
+            query="q",
+            provider="p",
+            results=[SearchHit(title="t", url="https://a.com", snippet="s")],
+            total=1,
+        )
+        assert _result_is_unusable(ok) is False
 
 
 class TestAvailableGroupCount:

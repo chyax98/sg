@@ -8,7 +8,6 @@ Key concerns:
 """
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -331,9 +330,9 @@ class TestSearchJSONL:
             provider="exa",
             results=[
                 SearchResult(
-                    title="R1", url="https://a.com", content="C1\nLine2", source="exa", score=0.95
+                    title="R1", url="https://a.com", snippet="C1\nLine2", source="exa", score=0.95
                 ),
-                SearchResult(title="R2", url="https://b.com", content="C2", source="exa"),
+                SearchResult(title="R2", url="https://b.com", snippet="C2", source="exa"),
             ],
             total=2,
             latency_ms=100.0,
@@ -344,7 +343,7 @@ class TestSearchJSONL:
 
         assert len(parsed) == 2
         assert parsed[0].title == "R1"
-        assert parsed[0].content == "C1\nLine2"  # newlines preserved
+        assert parsed[0].snippet == "C1\nLine2"  # newlines preserved
         assert parsed[0].score == 0.95
         assert parsed[1].title == "R2"
 
@@ -358,7 +357,7 @@ class TestSearchJSONL:
                 SearchResult(
                     title="Config Guide",
                     url="https://docs.com/config",
-                    content="Config docs...",
+                    snippet="Config docs...",
                     source="exa",
                 ),
             ],
@@ -378,14 +377,14 @@ class TestSearchJSONL:
         assert full is not None
         assert len(full.results) == 1
         assert full.results[0].title == "Config Guide"
-        assert full.results[0].content == "Config docs..."
+        assert full.results[0].snippet == "Config docs..."
 
     @pytest.mark.asyncio
     async def test_clear_removes_all(self, history):
         response = SearchResponse(
             query="test",
             provider="exa",
-            results=[SearchResult(title="R", url="https://x.com", content="c", source="exa")],
+            results=[SearchResult(title="R", url="https://x.com", snippet="c", source="exa")],
             total=1,
             latency_ms=10.0,
         )

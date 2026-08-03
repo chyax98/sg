@@ -52,12 +52,12 @@ def _format_view_content(response: SearchResponse) -> str:
             "index": i,
             "title": r.title,
             "url": r.url,
-            "content": r.content or r.snippet or "",
+            "snippet": r.snippet or "",
         }
         if r.score:
             data["score"] = r.score
-        if r.published_date:
-            data["published_date"] = r.published_date
+        if r.published_at:
+            data["published_at"] = r.published_at
         if r.author:
             data["author"] = r.author
         lines.append(json.dumps(data, ensure_ascii=False))
@@ -76,11 +76,10 @@ def _parse_view_content(view_text: str, provider: str = "") -> list[SearchResult
                 SearchResult(
                     title=data.get("title", ""),
                     url=data.get("url", ""),
-                    content=data.get("content", ""),
-                    snippet=data.get("content", ""),
+                    snippet=data.get("snippet") or "",
                     score=data.get("score", 0.0),
                     source=provider,
-                    published_date=data.get("published_date"),
+                    published_at=data.get("published_at"),
                     author=data.get("author"),
                 )
             )

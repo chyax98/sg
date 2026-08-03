@@ -1,4 +1,4 @@
-.PHONY: install reinstall dev test push update clean start stop status
+.PHONY: install reinstall dev test push update clean start stop status install-launchd uninstall-launchd
 
 # 安装到全局（使用缓存，快速）
 install:
@@ -72,9 +72,21 @@ help:
 	@echo "  make daemon     - 启动服务（后台守护模式）"
 	@echo "  make stop       - 停止服务"
 	@echo "  make status     - 查看服务状态"
+	@echo "  make install-launchd - 安装 macOS 开机自启"
+	@echo "  make uninstall-launchd - 卸载开机自启"
 	@echo ""
 	@echo "开发命令："
 	@echo "  make push       - 推送并重新安装"
 	@echo "  make update     - 提交、推送、重新安装"
 	@echo "  make test       - 运行测试"
 	@echo "  make clean      - 清理缓存"
+
+
+# 安装 macOS LaunchAgent（开机自启 + KeepAlive）
+# 通过 CLI 动态生成 plist，自动适配真实路径与端口
+install-launchd:
+	search-gateway daemon install
+
+# 卸载 LaunchAgent
+uninstall-launchd:
+	search-gateway daemon uninstall

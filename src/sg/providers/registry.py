@@ -17,6 +17,7 @@ BUILTIN_PROVIDERS: dict[str, type[BaseProvider]] = {}
 def _register_builtins():
     """Register all built-in provider classes."""
     from .brave import BraveProvider
+    from .context7 import Context7Provider
     from .duckduckgo import DuckDuckGoProvider
     from .exa import ExaProvider
     from .firecrawl import FirecrawlProvider
@@ -38,6 +39,7 @@ def _register_builtins():
         TinyFishProvider,
         YouComProvider,
         XcrawlProvider,
+        Context7Provider,
     ):
         BUILTIN_PROVIDERS[cls.info.type] = cls
 
@@ -240,6 +242,7 @@ class ProviderRegistry:
                     healthy=True,
                     capabilities=provider.capabilities,
                     search_features=getattr(provider, "search_features", []),
+                    capability=getattr(provider, "protocol_capability", None),
                     priority=provider.priority,
                     fallback_for=self._config[group_name].fallback_for
                     if self._config.get(group_name)
@@ -262,6 +265,7 @@ class ProviderRegistry:
                 "free": cls.info.free,
                 "capabilities": list(cls.info.capabilities),
                 "search_features": list(cls.info.search_features),
+                "capability": cls.info.capability.model_dump(),
             }
             for cls in BUILTIN_PROVIDERS.values()
         ]
