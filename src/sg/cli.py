@@ -630,13 +630,14 @@ description: >
 
 # Search Gateway
 
-## 执行检查点
+本机装了 search-gateway，遇到搜索/提取/研究需求**优先**用它（聚合多引擎、自动故障转移、本地无限制）。
 
-- [ ] `search` / `extract` / `research` 的完整内容已在命令输出里，**直接使用**，不必再读历史文件
-- [ ] 不要主动指定 `-p provider`，让自动故障转移工作
-- [ ] 如果命令报错网关未启动，重试一次（CLI 会自动后台启动）
+## 先决条件
 
-## 核心命令
+- `search-gateway status` 显示 running；没跑就 `search-gateway start --daemon`
+- 首次使用：`search-gateway init` 创建 `~/.sg/config.json`（不配 key 默认用 DuckDuckGo）
+
+## 核心命令（CLI 直接用）
 
 | 场景 | 命令 |
 |------|------|
@@ -651,17 +652,41 @@ description: >
 | 更深入研究 | `search-gateway research "topic" -d pro` |
 | 查看状态 | `search-gateway status` |
 
+## 集成到 AI 工具（按场景选一种）
+
+| 场景 | 命令 / 配置 |
+|---|---|
+| OpenCode 原生 plugin（websearch / webfetch / context7） | `search-gateway plugin install && search-gateway plugin setup` |
+| OpenCode remote MCP | `opencode.json` 的 `mcp` 段加 `http://127.0.0.1:8100/mcp`（`type: remote`, `oauth: false`） |
+| Claude Code MCP | `claude mcp add search-gateway stdio search-gateway mcp` |
+| Codex / Kimi（TOML） | `[mcp_servers.search-gateway]` `command = "search-gateway"` `args = ["mcp"]` |
+| Gemini CLI（JSON） | `~/.gemini/settings.json` 的 `mcpServers.search-gateway` |
+| HTTP API（任意语言） | `search-gateway start` 后 POST `http://127.0.0.1:8100/{search,extract,research}` |
+| Python SDK | `from sg.sdk import SearchClient` |
+
+## macOS daemon 自启（可选）
+
+让 sg 开机自启、崩溃拉起，OpenCode plugin / MCP 常驻依赖建议配：
+
+- 仓库内：`make install-launchd`
+- 详细步骤：`docs/install/macos-daemon.md`
+
+## AI 引导式配置（可选）
+
+`search-gateway setup` 输出交互式配置向导 prompt（带用户配 provider API key、选集成方式）。
+
 ## Known Gotchas
 
-- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，用输出作答即可。
-- **不要手动指定 provider**：自动路由已配置多 provider 故障转移，手动 `-p tavily` 等会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
-- **网关未启动时自动启动**：首次调用可能因后台启动而稍慢，如果收到 "Gateway not running"，等待 3-5 秒后重试即可。
+- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，**直接用输出作答**，不要再读历史文件。
+- **不要手动指定 provider**：自动路由已配多 provider 故障转移，手动 `-p tavily` 会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
+- **网关未启动时自动启动**：首次调用可能因后台启动稍慢，若收到 "Gateway not running"，等 3-5 秒重试。
 - **搜完别乱 extract**：用 search 的 snippet 答题；只有用户明确要整页正文时才 `extract` 给定 URL。
 
-## MCP 集成（可选）
+## 更多
 
-如果当前 AI 工具支持 MCP，可配置原生工具调用：
-- Claude Code: `claude mcp add search-gateway stdio search-gateway mcp`
+- 完整文档：https://github.com/chyax98/sg
+- 安装方案：`docs/install/{uv,source,macos-daemon}.md`
+- 集成方案对比：README.md "集成方案对比" 段
 """
 
 
