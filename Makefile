@@ -83,20 +83,10 @@ help:
 
 
 # 安装 macOS LaunchAgent（开机自启 + KeepAlive）
+# 通过 CLI 动态生成 plist，自动适配真实路径与端口
 install-launchd:
-	@mkdir -p "$(HOME)/Library/LaunchAgents" "$(HOME)/.sg/logs"
-	cp launchd/com.xd.search-gateway.plist "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
-	-launchctl bootout "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist" 2>/dev/null || true
-	# 停掉非 launchd 托管的旧进程，避免端口占用
-	-search-gateway stop 2>/dev/null || true
-	@sleep 1
-	launchctl bootstrap "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
-	launchctl enable "gui/$$(id -u)/com.xd.search-gateway"
-	@sleep 2
-	@curl -sf http://127.0.0.1:8100/status >/dev/null && echo "search-gateway launchd: ok" || (echo "search-gateway launchd: start failed"; tail -20 "$(HOME)/.sg/logs/launchd-stderr.log"; exit 1)
+	search-gateway daemon install
 
 # 卸载 LaunchAgent
 uninstall-launchd:
-	-launchctl bootout "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist" 2>/dev/null || true
-	rm -f "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
-	@echo "search-gateway launchd: removed"
+	search-gateway daemon uninstall

@@ -8,42 +8,49 @@
 - `~/.sg/config.json` 已初始化（`search-gateway init`）
 - `which search-gateway` 能找到（通常 `~/.local/bin/search-gateway`）
 
-## 安装
-
-### 方式 1：make（仓库内）
+## 一键安装
 
 ```bash
-git clone https://github.com/chyax98/sg
-cd sg
-make install-launchd
+search-gateway daemon install
+# 自定义端口
+search-gateway daemon install --port 9000
+# 强制重装
+search-gateway daemon install --force
 ```
 
-`make install-launchd` 做的事：
-1. 拷 `launchd/com.xd.search-gateway.plist` 到 `~/Library/LaunchAgents/`
-2. `launchctl bootout` 旧实例（若有）
-3. 停掉非 launchd 托管的旧进程（避免端口冲突）
-4. `launchctl bootstrap` + `enable`
-5. curl `/status` 验证启动成功
+CLI 做的事：
 
-### 方式 2：手动
+1. 检测平台（仅 macOS 受支持，Linux/Windows 报清晰错误）
+2. 解析 `which search-gateway` 真实路径 + `$HOME`
+3. 动态生成 plist 写到 `~/Library/LaunchAgents/com.search-gateway.plist`
+4. 清理历史 Label `com.xd.search-gateway` 的残留（自动迁移）
+5. `search-gateway stop` 停掉非 launchd 托管的旧 daemon（避免端口冲突）
+6. `launchctl bootstrap` + `enable`
+7. curl `/status` 验证启动成功
+
+`make install-launchd` 是 CLI 命令的 alias（Makefile 直接 delegate）。
+
+## 状态
 
 ```bash
-mkdir -p ~/Library/LaunchAgents ~/.sg/logs
-cp launchd/com.xd.search-gateway.plist ~/Library/LaunchAgents/
-
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.xd.search-gateway.plist 2>/dev/null || true
-search-gateway stop 2>/dev/null || true
-
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xd.search-gateway.plist
-launchctl enable gui/$(id -u)/com.xd.search-gateway
+search-gateway daemon status
 ```
 
-> 计划中：`search-gateway daemon install` CLI 跨平台抽象（macOS launchd / Linux systemd / Windows schtasks）。当前阶段用 make。
+输出 `launchctl print gui/$UID/com.search-gateway` 的关键字段（state / pid / last exit code / path）+ HTTP `/status` 验证。
+
+## 卸载
+
+```bash
+search-gateway daemon uninstall
+# 或 make uninstall-launchd
+```
+
+同时清理当前 Label 与历史 Label 的 plist。
 
 ## 验证
 
 ```bash
-launchctl print gui/$(id -u)/com.xd.search-gateway | head -30
+launchctl print gui/$(id -u)/com.search-gateway | head -30
 curl -sS http://127.0.0.1:8100/status
 tail -f ~/.sg/logs/launchd-stderr.log
 ```
@@ -53,37 +60,22 @@ tail -f ~/.sg/logs/launchd-stderr.log
 ## 行为
 
 - `RunAtLoad=true`：开机/登录自启
-- `KeepAlive=true`：崩溃自动拉起
-- 日志：`~/.sg/logs/launchd-{stdout,stderr}.log`
-- 端口：默认 8100（plist 模板，未来 `daemon install` 会动态生成）
+- `KeepAlive.SuccessfulExit=false`：进程异常退出自动拉起
+- `ThrottleInterval=10`：崩溃后至少 10 秒再拉起
+- 日志：`~/.sg/logs/launchd-{stdout,stderr}.log` + `~/.sg/logs/gateway.log`
+- 端口：默认 8100（`--port` 自定义）
 
-## 卸载
+## Label 命名
 
-```bash
-# 仓库内
-make uninstall-launchd
-
-# 或手动
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.xd.search-gateway.plist
-rm ~/Library/LaunchAgents/com.xd.search-gateway.plist
-```
+- 当前：`com.search-gateway`（去个人化）
+- 历史：`com.xd.search-gateway`（已废弃，install 时自动迁移清理）
 
 ## 排错
 
 | 问题 | 解决 |
 |---|---|
-| `launchctl bootstrap` 失败 | 先 `launchctl bootout gui/$(id -u) .../com.xd.search-gateway.plist` 清旧 |
-| 端口 8100 被占 | `lsof -iTCP:8100`，停掉占用进程；或改 plist 里的端口 |
+| `launchctl bootstrap` 失败 | 先 `search-gateway daemon uninstall` 清掉再 install |
+| 端口 8100 被占 | `lsof -iTCP:8100`，停掉占用进程；或 `daemon install --port 8101` |
 | `/status` 返回 500 | 看 `~/.sg/logs/launchd-stderr.log`，常见是 `~/.sg/config.json` 语法错 |
-| 改了 plist 不生效 | 必须 `bootout` 再 `bootstrap`，不能只 `kickstart` |
-| daemon 跑的是旧代码 | editable 模式下，`stop && start` 让进程重启加载新代码 |
-
-## Label 说明
-
-当前 plist 的 Label 是 `com.xd.search-gateway`（历史命名）。**计划改成 `com.search-gateway`**（去个人化），届时需要：
-
-```bash
-make uninstall-launchd          # 卸旧 Label
-# 升级到新版本后
-make install-launchd            # 装新 Label
-```
+| 改了代码 daemon 还是旧行为 | editable 模式下，`search-gateway daemon uninstall && daemon install` 让 launchd 重启进程加载新代码 |
+| 历史残留 `com.xd.search-gateway` 还在跑 | `daemon uninstall` 会一并清理；或手动 `launchctl bootout gui/$(id -u)/com.xd.search-gateway` |

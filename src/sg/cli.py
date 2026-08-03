@@ -2,7 +2,11 @@
 
 import asyncio
 import os
+import platform
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -832,6 +836,250 @@ def plugin_setup(config: str | None):
     for p in added:
         click.echo(f"  - {Path(p).name}")
     click.echo("\nRestart opencode to load the plugins.")
+
+
+# ============================================================
+# daemon group: macOS launchd 自启 / Linux & Windows 占位
+# ============================================================
+
+_DAEMON_LABEL = "com.search-gateway"
+_DAEMON_LABEL_LEGACY = "com.xd.search-gateway"
+_PLIST_PRINT_KEYS = ("state", "pid", "last exit code", "path =")
+_PLIST_DEFAULT_PORT = 8100
+
+
+def _gen_plist(bin_path: str, home: str, port: int) -> str:
+    """Generate launchd plist content with runtime paths (no hardcoded usernames)."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_DAEMON_LABEL}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin_path}</string>
+        <string>start</string>
+        <string>--port</string>
+        <string>{port}</string>
+        <string>--log-level</string>
+        <string>INFO</string>
+        <string>--log-file</string>
+        <string>{home}/.sg/logs/gateway.log</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{home}/.sg</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{home}/.sg/logs/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{home}/.sg/logs/launchd-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{home}</string>
+        <key>PYTHONWARNINGS</key>
+        <string>ignore::DeprecationWarning</string>
+    </dict>
+</dict>
+</plist>
+"""
+
+
+def _lc(cmd: list[str]) -> subprocess.CompletedProcess:
+    """Run launchctl / shell command, capture output, never raise."""
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def _bootout(label: str) -> None:
+    uid = os.getuid()
+    _lc(["launchctl", "bootout", f"gui/{uid}/{label}"])
+
+
+def _bootstrap(plist_path: Path) -> subprocess.CompletedProcess:
+    uid = os.getuid()
+    return _lc(["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)])
+
+
+def _enable(label: str) -> None:
+    uid = os.getuid()
+    _lc(["launchctl", "enable", f"gui/{uid}/{label}"])
+
+
+def _http_status_ok(port: int = _PLIST_DEFAULT_PORT) -> bool:
+    try:
+        r = httpx.get(f"http://127.0.0.1:{port}/status", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _resolve_bin() -> str:
+    """Prefer the user-global uv tool install over the active venv's binary."""
+    candidates: list[str] = [
+        str(Path.home() / ".local" / "bin" / "search-gateway"),
+        shutil.which("search-gateway") or "",
+    ]
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
+    return ""
+
+
+def _require_macos(action: str) -> None:
+    if platform.system() != "Darwin":
+        click.echo(
+            f"Error: daemon {action} on {platform.system()} not yet supported. "
+            f"Run 'search-gateway start --daemon' manually instead.",
+            err=True,
+        )
+        sys.exit(1)
+
+
+@cli.group()
+def daemon():
+    """Manage daemon auto-start (macOS launchd; Linux/Windows TBD)."""
+    pass
+
+
+@daemon.command(name="install")
+@click.option("--port", "-p", default=_PLIST_DEFAULT_PORT, help="Gateway port")
+@click.option("--force", "-f", is_flag=True, help="Reinstall even if already installed")
+def daemon_install(port: int, force: bool):
+    """Install daemon auto-start (macOS: launchd)."""
+    _require_macos("install")
+
+    bin_path = _resolve_bin()
+    if not bin_path:
+        click.echo("Error: search-gateway not found in PATH", err=True)
+        sys.exit(1)
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    (home / ".sg" / "logs").mkdir(parents=True, exist_ok=True)
+
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+
+    # Idempotent: 已装且未要求 force
+    if plist_path.exists() and not force:
+        click.echo(f"✓ Already installed at {plist_path}")
+        click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
+        return
+
+    # 清理 legacy label (com.xd.search-gateway)
+    legacy_plist = agents_dir / f"{_DAEMON_LABEL_LEGACY}.plist"
+    if legacy_plist.exists():
+        click.echo(f"Cleaning up legacy label {_DAEMON_LABEL_LEGACY}...")
+        _bootout(_DAEMON_LABEL_LEGACY)
+        legacy_plist.unlink(missing_ok=True)
+
+    # 若新 label 已装，先 bootout
+    if plist_path.exists():
+        _bootout(_DAEMON_LABEL)
+
+    # 停掉非 launchd 托管的旧 daemon，避免端口冲突
+    _lc(["search-gateway", "stop"])
+    time.sleep(1)
+
+    # 生成并写 plist
+    plist_path.write_text(_gen_plist(bin_path, str(home), port), encoding="utf-8")
+
+    # bootstrap + enable
+    r = _bootstrap(plist_path)
+    if r.returncode != 0:
+        click.echo(f"Error: launchctl bootstrap failed: {r.stderr.strip()}", err=True)
+        sys.exit(1)
+    _enable(_DAEMON_LABEL)
+
+    # 验证
+    time.sleep(2)
+    if _http_status_ok(port):
+        click.echo(f"✓ Daemon installed and running at http://127.0.0.1:{port}")
+        click.echo(f"  plist: {plist_path}")
+        click.echo(f"  logs:  {home}/.sg/logs/launchd-{{stdout,stderr}}.log")
+    else:
+        click.echo(
+            "⚠ Daemon plist installed but /status not responding. Check:\n"
+            f"  tail -20 {home}/.sg/logs/launchd-stderr.log",
+            err=True,
+        )
+        sys.exit(1)
+
+
+@daemon.command(name="uninstall")
+def daemon_uninstall():
+    """Uninstall daemon auto-start."""
+    _require_macos("uninstall")
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+
+    removed: list[str] = []
+    for label, plist_name in [
+        (_DAEMON_LABEL, f"{_DAEMON_LABEL}.plist"),
+        (_DAEMON_LABEL_LEGACY, f"{_DAEMON_LABEL_LEGACY}.plist"),
+    ]:
+        plist_path = agents_dir / plist_name
+        if plist_path.exists():
+            _bootout(label)
+            plist_path.unlink(missing_ok=True)
+            removed.append(label)
+
+    if removed:
+        click.echo(f"✓ Removed label(s): {', '.join(removed)}")
+    else:
+        click.echo("Nothing to uninstall.")
+
+
+@daemon.command(name="status")
+def daemon_status():
+    """Show daemon auto-start status."""
+    _require_macos("status")
+
+    home = Path.home()
+    agents_dir = home / "Library" / "LaunchAgents"
+    plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
+
+    if not plist_path.exists():
+        click.echo(f"Daemon auto-start NOT installed (expected {plist_path}).")
+        click.echo("  Run 'search-gateway daemon install' to enable.")
+        return
+
+    uid = os.getuid()
+    r = _lc(["launchctl", "print", f"gui/{uid}/{_DAEMON_LABEL}"])
+    if r.returncode == 0:
+        click.echo(f"Label:   {_DAEMON_LABEL}")
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            for key in _PLIST_PRINT_KEYS:
+                if stripped.startswith(key):
+                    click.echo(f"  {stripped}")
+                    break
+    else:
+        click.echo(f"plist exists but label not loaded: {r.stderr.strip()}")
+
+    if _http_status_ok():
+        click.echo("HTTP /status: ✓ running")
+    else:
+        click.echo("HTTP /status: ✗ not responding")
 
 
 if __name__ == "__main__":
