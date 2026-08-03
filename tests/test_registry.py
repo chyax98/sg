@@ -4,7 +4,7 @@ import pytest
 
 from sg.models.config import ProviderConfig, ProviderInstanceConfig
 from sg.providers.base import ProviderInfo, SearchProvider
-from sg.providers.registry import ProviderRegistry, BUILTIN_PROVIDERS
+from sg.providers.registry import BUILTIN_PROVIDERS, ProviderRegistry
 
 
 class FakeRegistryProvider(SearchProvider):

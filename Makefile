@@ -1,4 +1,4 @@
-.PHONY: install reinstall dev test push update clean start stop status
+.PHONY: install reinstall dev test push update clean start stop status install-launchd uninstall-launchd
 
 # 安装到全局（使用缓存，快速）
 install:
@@ -72,9 +72,31 @@ help:
 	@echo "  make daemon     - 启动服务（后台守护模式）"
 	@echo "  make stop       - 停止服务"
 	@echo "  make status     - 查看服务状态"
+	@echo "  make install-launchd - 安装 macOS 开机自启"
+	@echo "  make uninstall-launchd - 卸载开机自启"
 	@echo ""
 	@echo "开发命令："
 	@echo "  make push       - 推送并重新安装"
 	@echo "  make update     - 提交、推送、重新安装"
 	@echo "  make test       - 运行测试"
 	@echo "  make clean      - 清理缓存"
+
+
+# 安装 macOS LaunchAgent（开机自启 + KeepAlive）
+install-launchd:
+	@mkdir -p "$(HOME)/Library/LaunchAgents" "$(HOME)/.sg/logs"
+	cp launchd/com.xd.search-gateway.plist "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
+	-launchctl bootout "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist" 2>/dev/null || true
+	# 停掉非 launchd 托管的旧进程，避免端口占用
+	-search-gateway stop 2>/dev/null || true
+	@sleep 1
+	launchctl bootstrap "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
+	launchctl enable "gui/$$(id -u)/com.xd.search-gateway"
+	@sleep 2
+	@curl -sf http://127.0.0.1:8100/status >/dev/null && echo "search-gateway launchd: ok" || (echo "search-gateway launchd: start failed"; tail -20 "$(HOME)/.sg/logs/launchd-stderr.log"; exit 1)
+
+# 卸载 LaunchAgent
+uninstall-launchd:
+	-launchctl bootout "gui/$$(id -u)" "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist" 2>/dev/null || true
+	rm -f "$(HOME)/Library/LaunchAgents/com.xd.search-gateway.plist"
+	@echo "search-gateway launchd: removed"

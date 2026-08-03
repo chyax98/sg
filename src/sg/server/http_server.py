@@ -4,7 +4,6 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlsplit
 
 import uvicorn
@@ -43,19 +42,21 @@ WEB_UI_PATH = _find_web_ui()
 class SearchBody(BaseModel):
     query: str
     provider: str | None = None
-    max_results: int = Field(default=10, ge=1, le=50)
-    include_domains: list[str] = Field(default_factory=list)
+    limit: int = Field(default=10, ge=1, le=50)
+    domains: list[str] = Field(default_factory=list)
     exclude_domains: list[str] = Field(default_factory=list)
     time_range: str | None = None
-    search_depth: str = "basic"
-    extra: dict[str, Any] = Field(default_factory=dict)
+    depth: str = "basic"
+    language: str | None = None
+    location: str | None = None
+    want_raw: bool = False
 
 
 class ExtractBody(BaseModel):
     urls: list[str]
     provider: str | None = None
     format: str = "markdown"
-    extra: dict[str, Any] = Field(default_factory=dict)
+    only_main: bool | None = None
 
 
 class ResearchBody(BaseModel):
@@ -64,15 +65,35 @@ class ResearchBody(BaseModel):
     provider: str | None = None
 
 
+class DocsSearchBody(BaseModel):
+    """Context7 resolve-library-id. Independent of /search."""
+
+    library_name: str
+    query: str
+    fast: bool = False
+    provider: str | None = None
+
+
+class DocsContextBody(BaseModel):
+    """Context7 query-docs. Independent of /extract|/research."""
+
+    library_id: str
+    query: str
+    fast: bool = False
+    provider: str | None = None
+
+
 class SearchBatchBody(BaseModel):
     queries: list[str]
     provider: str | None = None
-    max_results: int = Field(default=10, ge=1, le=50)
-    include_domains: list[str] = Field(default_factory=list)
+    limit: int = Field(default=10, ge=1, le=50)
+    domains: list[str] = Field(default_factory=list)
     exclude_domains: list[str] = Field(default_factory=list)
     time_range: str | None = None
-    search_depth: str = "basic"
-    extra: dict[str, Any] = Field(default_factory=dict)
+    depth: str = "basic"
+    language: str | None = None
+    location: str | None = None
+    want_raw: bool = False
 
 
 class ProviderBody(BaseModel):
@@ -160,12 +181,14 @@ class HTTPServer:
                 result = await gw.search(
                     query=body.query,
                     provider=body.provider,
-                    max_results=body.max_results,
-                    include_domains=body.include_domains,
+                    limit=body.limit,
+                    domains=body.domains,
                     exclude_domains=body.exclude_domains,
                     time_range=body.time_range,
-                    search_depth=body.search_depth,
-                    extra=body.extra,
+                    depth=body.depth,
+                    language=body.language,
+                    location=body.location,
+                    want_raw=body.want_raw,
                 )
                 return result.model_dump()
             except Exception as e:
@@ -177,12 +200,14 @@ class HTTPServer:
                 results = await gw.search_batch(
                     queries=body.queries,
                     provider=body.provider,
-                    max_results=body.max_results,
-                    include_domains=body.include_domains,
+                    limit=body.limit,
+                    domains=body.domains,
                     exclude_domains=body.exclude_domains,
                     time_range=body.time_range,
-                    search_depth=body.search_depth,
-                    extra=body.extra,
+                    depth=body.depth,
+                    language=body.language,
+                    location=body.location,
+                    want_raw=body.want_raw,
                 )
                 return [r.model_dump() for r in results]
             except Exception as e:
@@ -195,7 +220,7 @@ class HTTPServer:
                     urls=body.urls,
                     provider=body.provider,
                     format=body.format,
-                    extra=body.extra,
+                    only_main=body.only_main,
                 )
                 return result.model_dump()
             except Exception as e:
@@ -212,6 +237,34 @@ class HTTPServer:
                 return result.model_dump()
             except Exception as e:
                 self._raise_internal_error("Research", e)
+
+        # === Context7 docs side-path ===
+
+        @self.app.post("/docs/search")
+        async def docs_search(body: DocsSearchBody):
+            try:
+                result = await gw.docs_search(
+                    library_name=body.library_name,
+                    query=body.query,
+                    fast=body.fast,
+                    provider=body.provider,
+                )
+                return result.model_dump()
+            except Exception as e:
+                self._raise_internal_error("Docs search", e)
+
+        @self.app.post("/docs/context")
+        async def docs_context(body: DocsContextBody):
+            try:
+                result = await gw.docs_context(
+                    library_id=body.library_id,
+                    query=body.query,
+                    fast=body.fast,
+                    provider=body.provider,
+                )
+                return result.model_dump()
+            except Exception as e:
+                self._raise_internal_error("Docs context", e)
 
         # === Operational API ===
 

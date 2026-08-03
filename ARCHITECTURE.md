@@ -100,9 +100,9 @@ Provider Groups 始终按照 **priority 严格排序**（数字越小优先级�
 
 1. **无 provider 指定：**
    - 从最高优先级（priority 最小）的 Group 开始
-   - 尝试最多 `max_attempts` 个分组
-   - 失败时 failover 到下一个优先级的 Group
-   - 如果全部失败则回退到 fallback 分组
+   - 失败（抛错 / 空结果 / 熔断跳过）时 failover 到下一组
+   - `max_attempts <= 0`：试完全部候选组；`>0` 时最多试 N 个组
+   - 若 fallback 组未在已试列表中，最后再试 fallback
 
 2. **指定 provider group：**
    - 尝试指定的 provider 分组
@@ -339,14 +339,14 @@ file: /Users/xxx/.sg/history/view/2026-03/1774293083050-bbb2.txt
     "success_threshold": 2
   },
   "circuit_breaker": {
-    "base_timeout": 3600,     // 1 小时
-    "multiplier": 6.0,        // 指数退避
-    "max_timeout": 172800,    // 48 小时
-    "quota_timeout": 86400,   // 429 错误 24 小时
-    "auth_timeout": 604800    // 401/403 错误 7 天
+    "base_timeout": 300,      // 5 分钟（本地免费 key 默认）
+    "multiplier": 2.0,
+    "max_timeout": 3600,      // 1 小时封顶
+    "quota_timeout": 3600,    // 429
+    "auth_timeout": 86400     // 401/403 1 天
   },
   "failover": {
-    "max_attempts": 3         // 最多尝试 3 个 provider group
+    "max_attempts": 0         // 0 = 试完全部 group（推荐）
   }
 }
 ```

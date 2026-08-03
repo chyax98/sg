@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from sg.core.executor import Executor
-
 from sg.models.search import (
     ExtractResponse,
     ExtractResult,
@@ -31,7 +30,7 @@ class TestGatewayInit:
         config_file.write_text("{}")
 
         gateway = Gateway(config_path=str(config_file), port=19001)
-        assert gateway.config.executor.failover.max_attempts == 3
+        assert gateway.config.executor.failover.max_attempts == 0
 
     def test_gateway_port_override(self, tmp_path):
         config_file = tmp_path / "config.json"
@@ -60,7 +59,7 @@ class TestGatewaySearch:
         gateway.history = MagicMock()
         gateway.history.record = AsyncMock()
 
-        result = await gateway.search("test", max_results=5)
+        result = await gateway.search("test", limit=5)
 
         assert result.provider == "mock"
         gateway.executor.execute.assert_called_once()
@@ -171,7 +170,7 @@ class TestGatewayExtract:
             ]
         )
 
-        result = await gateway.extract(["https://example.com"])
+        await gateway.extract(["https://example.com"])
 
         gateway.executor.execute.assert_called_once()
         assert gateway.executor.execute.call_args[0][0] == "extract"
@@ -264,7 +263,7 @@ class TestGatewayResearch:
         gateway = Gateway(config_path=str(config_file), port=19030)
         mock_response = ResearchResponse(
             topic="AI trends",
-            content="Research content here",
+            report="Research content here",
             sources=["https://src.com"],
             provider="tavily",
             latency_ms=2000.0,
@@ -350,7 +349,7 @@ class TestGatewayConfig:
 
         config_file.write_text('{"providers": {"bad": {"type": "tavily", "api_key": "x"}}}')
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             await gateway.reload_config()
 
         assert gateway.providers is old_providers

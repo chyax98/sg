@@ -27,11 +27,11 @@ class SearchClient:
         self,
         query: str,
         provider: str | None = None,
-        max_results: int = 10,
-        include_domains: list[str] | None = None,
+        limit: int = 10,
+        domains: list[str] | None = None,
         exclude_domains: list[str] | None = None,
         time_range: str | None = None,
-        search_depth: str = "basic",
+        depth: str = "basic",
         **kwargs,
     ) -> SearchResponse:
         """Execute search."""
@@ -40,11 +40,11 @@ class SearchClient:
             json={
                 "query": query,
                 "provider": provider,
-                "max_results": max_results,
-                "include_domains": include_domains or [],
+                "limit": limit,
+                "domains": domains or [],
                 "exclude_domains": exclude_domains or [],
                 "time_range": time_range,
-                "search_depth": search_depth,
+                "depth": depth,
                 "extra": kwargs,
             },
         )
@@ -124,11 +124,11 @@ class AsyncSearchClient:
         self,
         query: str,
         provider: str | None = None,
-        max_results: int = 10,
-        include_domains: list[str] | None = None,
+        limit: int = 10,
+        domains: list[str] | None = None,
         exclude_domains: list[str] | None = None,
         time_range: str | None = None,
-        search_depth: str = "basic",
+        depth: str = "basic",
         **kwargs,
     ) -> SearchResponse:
         """Execute search."""
@@ -137,11 +137,11 @@ class AsyncSearchClient:
             json={
                 "query": query,
                 "provider": provider,
-                "max_results": max_results,
-                "include_domains": include_domains or [],
+                "limit": limit,
+                "domains": domains or [],
                 "exclude_domains": exclude_domains or [],
                 "time_range": time_range,
-                "search_depth": search_depth,
+                "depth": depth,
                 "extra": kwargs,
             },
         )

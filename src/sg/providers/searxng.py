@@ -66,11 +66,11 @@ class SearXNGProvider(SearchProvider):
             SearchResult(
                 title=item.get("title", ""),
                 url=item.get("url", ""),
-                content=item.get("content", ""),
+                snippet=item.get("content", ""),
                 score=float(item.get("score", 0)),
                 source=self.name,
             )
-            for item in data.get("results", [])[: request.max_results]
+            for item in data.get("results", [])[: request.limit]
         ]
 
         latency = (time.perf_counter() - start) * 1000

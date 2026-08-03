@@ -33,7 +33,7 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
         display_name="Xcrawl",
         needs_api_key=True,
         capabilities=("search", "extract"),
-        search_features=("include_domains", "exclude_domains"),  # via site: operators
+        search_features=("domains", "exclude_domains"),  # via site: operators
     )
 
     DEFAULT_BASE_URL = "https://run.xcrawl.com"
@@ -78,15 +78,15 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
         # Build query with domain operators
         query = self.apply_domain_operators(
             request.query,
-            request.include_domains,
+            request.domains,
             request.exclude_domains,
         )
 
         payload = {
             "query": query,
-            "limit": request.max_results,
-            "location": request.extra.get("location", "US"),
-            "language": request.extra.get("language", "en"),
+            "limit": request.limit,
+            "location": request.location or "US",
+            "language": request.language or "en",
         }
 
         response = await self._client.post("/v1/search", json=payload)
@@ -105,9 +105,8 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
                 SearchResult(
                     title=item.get("title") or "",
                     url=item.get("url", ""),
-                    content=item.get("description", ""),
                     snippet=item.get("description", ""),
-                    score=0.0,  # Xcrawl doesn't provide relevance score
+                    score=0.0,
                     source=self.name,
                 )
             )
@@ -129,17 +128,23 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
 
         async def _scrape_one(url: str) -> ExtractResult:
             try:
+                fmt = (
+                    request.format if request.format in ("markdown", "html", "text") else "markdown"
+                )
+                out_fmt = "markdown" if fmt == "text" else fmt
                 payload = {
                     "url": url,
                     "mode": "sync",
-                    "proxy": {"location": request.extra.get("proxy_location", "US")},
+                    "proxy": {"location": "US"},
                     "request": {
-                        "locale": request.extra.get("locale", "en-US"),
-                        "device": request.extra.get("device", "desktop"),
-                        "only_main_content": request.extra.get("only_main_content", False),
+                        "locale": "en-US",
+                        "device": "desktop",
+                        "only_main_content": bool(request.only_main)
+                        if request.only_main is not None
+                        else True,
                     },
-                    "js_render": {"enabled": request.extra.get("js_render", True)},
-                    "output": {"formats": [request.format] if request.format else ["markdown"]},
+                    "js_render": {"enabled": True},
+                    "output": {"formats": [out_fmt]},
                 }
 
                 response = await self._client.post("/v1/scrape", json=payload)
@@ -150,19 +155,15 @@ class XcrawlProvider(SearchProvider, ExtractProvider):
                 content = ""
                 title = None
 
-                # Extract content based on format
-                if request.format == "markdown":
-                    content = result_data.get("markdown", "")
-                elif request.format == "html":
-                    content = result_data.get("html", "")
-                elif request.format == "json":
-                    content = str(result_data.get("json", ""))
+                if fmt == "html":
+                    content = result_data.get("html", "") or ""
                 else:
-                    content = result_data.get("markdown", "")
+                    content = result_data.get("markdown", "") or result_data.get("text", "") or ""
 
-                # Extract title from metadata
-                metadata = result_data.get("metadata", {})
+                metadata = result_data.get("metadata", {}) or {}
                 title = metadata.get("title")
+                if not str(content).strip():
+                    return ExtractResult(url=url, content="", error="empty extract")
 
                 return ExtractResult(url=url, content=content, title=title)
 

@@ -1,107 +1,85 @@
-"""Structured text output helpers for AI agent consumption."""
+"""Text formatters for agent-facing tool results (task content only)."""
+
+from __future__ import annotations
 
 from typing import Any
 
 
-def _inline(value: Any) -> str:
-    text = str(value or "")
-    return text.replace("\n", " ").strip()
+def _s(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def format_search_output(result: dict[str, Any], *, for_mcp: bool = False) -> str:
-    """Inline all search hits (title, url, snippet). No file pointer."""
-    query = result.get("query", "")
-    results = result.get("results", []) or []
-    total = result.get("total", len(results))
+    """Inline search hits: title, url, snippet. No routing metadata."""
+    del for_mcp  # kept for call-site compatibility
+    results = result.get("results") or []
     error = result.get("error")
-    provider = result.get("provider", "")
 
-    lines = ["type: search", f"query: {query}"]
-    if provider:
-        lines.append(f"provider: {provider}")
-    if error:
-        lines.append(f"error: {_inline(error)}")
-        return "\n".join(lines)
+    if error and not results:
+        return f"Search failed: {_s(error)}"
+    if not results:
+        return "No results."
 
-    lines.append(f"total: {total}")
-    if for_mcp:
-        lines.append(
-            "note: Answer from the snippets below. Do not call extract on these URLs unless the user needs full page text."
-        )
-    lines.append("")
-
+    lines: list[str] = []
     for i, item in enumerate(results, 1):
-        body = (item.get("content") or item.get("snippet") or "").strip()
-        lines.append(f"--- result {i} ---")
-        lines.append(f"title: {item.get('title', '')}")
-        lines.append(f"url: {item.get('url', '')}")
-        if item.get("published_date"):
-            lines.append(f"published: {item.get('published_date')}")
-        if item.get("score"):
-            lines.append(f"score: {item.get('score')}")
-        lines.append("snippet:")
-        lines.append(body if body else "(empty)")
+        title = _s(item.get("title")) or "(untitled)"
+        url = _s(item.get("url"))
+        body = _s(item.get("snippet") or item.get("content") or item.get("raw"))
+        lines.append(f"{i}. {title}")
+        if url:
+            lines.append(f"   {url}")
+        if body:
+            for line in body.splitlines():
+                lines.append(f"   {line}")
         lines.append("")
-
     return "\n".join(lines).rstrip()
 
 
 def format_extract_output(result: dict[str, Any]) -> str:
-    """Inline extracted page content per URL."""
-    raw_results = result.get("results", []) or []
-    result_files = result.get("result_files", []) or []
-    provider = result.get("provider", "")
+    """Inline page bodies. No routing metadata."""
+    items = result.get("results") or result.get("result_files") or []
+    if not items:
+        return "No content."
 
-    if raw_results:
-        items = raw_results
-    else:
-        items = result_files
-
-    lines = ["type: extract", f"items: {len(items)}"]
-    if provider:
-        lines.append(f"provider: {provider}")
-    lines.append("")
-
-    for i, item in enumerate(items, 1):
-        url = item.get("url", "")
+    parts: list[str] = []
+    for item in items:
+        url = _s(item.get("url"))
+        title = _s(item.get("title"))
         err = item.get("error")
+        parts.append(f"## {title or url or 'page'}")
+        if url:
+            parts.append(url)
         if err:
-            lines.append(f"--- item {i} ---")
-            lines.append(f"url: {url}")
-            lines.append(f"error: {_inline(err)}")
-            lines.append("")
+            parts.append(f"error: {_s(err)}")
+            parts.append("")
             continue
-
-        content = (item.get("content") or "").strip()
-        title = item.get("title") or ""
-        lines.append(f"--- item {i} ---")
-        lines.append(f"url: {url}")
-        if title:
-            lines.append(f"title: {title}")
-        lines.append("content:")
-        lines.append(content if content else "(empty)")
-        lines.append("")
-
-    return "\n".join(lines).rstrip()
+        content = _s(item.get("content"))
+        parts.append(content or "(empty)")
+        parts.append("")
+    return "\n".join(parts).rstrip()
 
 
 def format_research_output(result: dict[str, Any]) -> str:
-    """Inline full research report."""
-    topic = result.get("topic", "")
-    content = (result.get("content", "") or "").strip()
-    provider = result.get("provider", "")
+    """Inline research report and source URLs. No routing metadata."""
+    topic = _s(result.get("topic"))
+    report = _s(result.get("report") or result.get("content"))
+    sources = [s for s in (result.get("sources") or []) if _s(s)]
+    error = result.get("error")
 
-    lines = ["type: research", f"topic: {topic}"]
-    if provider:
-        lines.append(f"provider: {provider}")
-    lines.append("")
-    lines.append("report:")
-    lines.append(content if content else "(empty)")
-    return "\n".join(lines)
+    lines: list[str] = []
+    if topic:
+        lines.extend([f"# {topic}", ""])
+    if error and not report:
+        lines.append(f"Research failed: {_s(error)}")
+        return "\n".join(lines).rstrip()
+    lines.append(report or "(empty)")
+    if sources:
+        lines.append("")
+        lines.append("## sources")
+        for s in sources:
+            lines.append(f"- {s}")
+    return "\n".join(lines).rstrip()
 
 
-MCP_SERVER_INSTRUCTIONS = """Search Gateway MCP tools return full text inline (search snippets, extract body, research report).
-Use the tool output directly. Do not follow up with read_file on disk paths.
-Use extract only when the user needs full page content for a specific URL — not as a default after search.
-Prefer automatic provider routing; omit the provider argument unless the user asks for one.
+MCP_SERVER_INSTRUCTIONS = """Tool results are full text inline. Use each tool according to its own description.
 """

@@ -29,7 +29,7 @@ class TinyFishProvider(SearchProvider, ExtractProvider):
         type="tinyfish",
         display_name="TinyFish",
         capabilities=("search", "extract"),
-        search_features=("include_domains", "exclude_domains"),
+        search_features=("domains", "exclude_domains", "language", "location"),
     )
 
     DEFAULT_SEARCH_URL = "https://api.search.tinyfish.ai"
@@ -82,32 +82,29 @@ class TinyFishProvider(SearchProvider, ExtractProvider):
         start = time.perf_counter()
         query = self.apply_domain_operators(
             request.query,
-            request.include_domains,
+            request.domains,
             request.exclude_domains,
         )
         params: dict[str, str] = {"query": query}
-        for key in ("location", "language"):
-            value = request.extra.get(key)
-            if isinstance(value, str) and value:
-                params[key] = value
+        language = request.language
+        location = request.location
+        if isinstance(language, str) and language:
+            params["language"] = language
+        if isinstance(location, str) and location:
+            params["location"] = location
 
         resp = await self._search_client.get("/", params=params)
         resp.raise_for_status()
         data = resp.json()
 
         results = []
-        for item in data.get("results", [])[: request.max_results]:
+        for item in data.get("results", [])[: request.limit]:
             results.append(
                 SearchResult(
                     title=item.get("title") or "",
                     url=item.get("url") or "",
-                    content=item.get("snippet") or "",
                     snippet=item.get("snippet") or "",
                     source=self.name,
-                    extra={
-                        "position": item.get("position"),
-                        "site_name": item.get("site_name"),
-                    },
                 )
             )
 
@@ -134,8 +131,8 @@ class TinyFishProvider(SearchProvider, ExtractProvider):
                 json={
                     "urls": batch,
                     "format": self._normalize_fetch_format(request.format),
-                    "links": bool(request.extra.get("links", False)),
-                    "image_links": bool(request.extra.get("image_links", False)),
+                    "links": False,
+                    "image_links": False,
                 },
             )
             resp.raise_for_status()

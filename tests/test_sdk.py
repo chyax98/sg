@@ -1,10 +1,11 @@
 """Tests for SDK client."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from sg.sdk.client import SearchClient, AsyncSearchClient
+import pytest
+
 from sg.models.search import SearchResponse
+from sg.sdk.client import AsyncSearchClient, SearchClient
 
 
 class TestSearchClient:
@@ -53,20 +54,20 @@ class TestSearchClient:
         client.search(
             "test",
             provider="tavily-main",
-            max_results=5,
-            include_domains=["example.com"],
+            limit=5,
+            domains=["example.com"],
             time_range="week",
-            search_depth="advanced",
+            depth="advanced",
         )
 
         call_args = mock_post.call_args
         body = call_args[1]["json"]
         assert body["query"] == "test"
         assert body["provider"] == "tavily-main"
-        assert body["max_results"] == 5
-        assert body["include_domains"] == ["example.com"]
+        assert body["limit"] == 5
+        assert body["domains"] == ["example.com"]
         assert body["time_range"] == "week"
-        assert body["search_depth"] == "advanced"
+        assert body["depth"] == "advanced"
 
     @patch("httpx.Client.post")
     def test_extract(self, mock_post):
@@ -90,7 +91,7 @@ class TestSearchClient:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "topic": "AI",
-            "content": "Research content",
+            "report": "Research content",
             "sources": ["https://example.com"],
             "provider": "tavily",
             "latency_ms": 5000.0,
@@ -194,10 +195,10 @@ class TestAsyncSearchClient:
         mock_post.return_value = mock_resp
 
         client = AsyncSearchClient()
-        await client.search("test query", search_depth="advanced")
+        await client.search("test query", depth="advanced")
 
         body = mock_post.call_args[1]["json"]
-        assert body["search_depth"] == "advanced"
+        assert body["depth"] == "advanced"
         await client.close()
 
     @pytest.mark.asyncio

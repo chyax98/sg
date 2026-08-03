@@ -89,11 +89,11 @@ class JinaReaderProvider(SearchProvider, ExtractProvider):
                 SearchResult(
                     title=item.get("title", ""),
                     url=item.get("url", ""),
-                    content=item.get("content", ""),
+                    snippet=item.get("content", ""),
                     source=self.name,
                 )
             )
-            if len(results) >= request.max_results:
+            if len(results) >= request.limit:
                 break
 
         latency = (time.perf_counter() - start) * 1000

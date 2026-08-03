@@ -1,31 +1,51 @@
-"""Tavily provider — uses official tavily-python SDK."""
+"""Tavily adapter — official tavily-python SDK."""
 
+from __future__ import annotations
+
+import asyncio
 import time
+from typing import Any
 
 from ..models.search import (
     ExtractRequest,
     ExtractResponse,
-    ExtractResult,
     ResearchRequest,
     ResearchResponse,
     SearchRequest,
     SearchResponse,
-    SearchResult,
 )
-from .base import ExtractProvider, ProviderInfo, ResearchProvider, SearchProvider
+from ._assemble import attr, make_hit, make_page, optional_list, text, urls_from_sources
+from .base import (
+    ExtractProvider,
+    ProviderInfo,
+    ResearchProvider,
+    SearchProvider,
+    cap,
+    extract_cap,
+    research_cap,
+    search_cap,
+)
+
+_DONE = frozenset({"completed", "complete", "success", "done", "finished"})
+_FAILED = frozenset({"failed", "error", "cancelled", "canceled"})
 
 
 class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
-    """Tavily: AI-optimized search + extract + research.
-
-    Free 1,000/month, Pro from $29/month.
-    """
-
     info = ProviderInfo(
         type="tavily",
         display_name="Tavily",
-        capabilities=("search", "extract", "research"),
-        search_features=("include_domains", "exclude_domains", "time_range", "search_depth"),
+        capability=cap(
+            search=search_cap(
+                domains=True,
+                exclude_domains=True,
+                time_range=True,
+                depth=True,
+                location=True,
+                raw_content=True,
+            ),
+            extract=extract_cap(formats=("markdown", "text"), multi_url=True),
+            research=research_cap(depths=("auto", "mini", "pro")),
+        ),
     )
 
     def __init__(self, **kwargs):
@@ -55,45 +75,42 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
         self.validate_search_request(request)
 
         start = time.perf_counter()
-
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "query": request.query,
-            "max_results": request.max_results,
-            "search_depth": request.search_depth,
+            "max_results": request.limit,
+            "search_depth": request.depth,
+            "timeout": max(5.0, self.timeout / 1000),
         }
-        if request.include_domains:
-            kwargs["include_domains"] = request.include_domains
-        if request.exclude_domains:
-            kwargs["exclude_domains"] = request.exclude_domains
+        if include := optional_list(request.domains):
+            kwargs["include_domains"] = include
+        if exclude := optional_list(request.exclude_domains):
+            kwargs["exclude_domains"] = exclude
         if request.time_range:
             kwargs["time_range"] = request.time_range
-        if request.extra.get("topic"):
-            kwargs["topic"] = request.extra["topic"]
-        if request.extra.get("include_images"):
-            kwargs["include_images"] = True
-        if request.extra.get("include_raw_content"):
-            kwargs["include_raw_content"] = True
+        if request.location:
+            kwargs["country"] = request.location
+        if request.want_raw:
+            kwargs["include_raw_content"] = "markdown"
 
         data = await self._client.search(**kwargs)
         latency = (time.perf_counter() - start) * 1000
-
-        results = [
-            SearchResult(
-                title=r.get("title", ""),
-                url=r.get("url", ""),
-                content=r.get("content", ""),
+        hits = [
+            make_hit(
+                title=r.get("title"),
+                url=r.get("url"),
+                snippet=r.get("content"),
                 score=r.get("score", 0.0),
                 source=self.name,
-                raw_content=r.get("raw_content"),
+                published_at=r.get("published_date"),
+                raw=r.get("raw_content") if request.want_raw else None,
             )
-            for r in data.get("results", [])
+            for r in (data.get("results") or [])
         ]
-
         return SearchResponse(
             query=request.query,
             provider=self.name,
-            results=results,
-            total=len(results),
+            results=hits,
+            total=len(hits),
             latency_ms=latency,
         )
 
@@ -102,50 +119,79 @@ class TavilyProvider(SearchProvider, ExtractProvider, ResearchProvider):
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
-        data = await self._client.extract(urls=request.urls)
+        fmt = request.format if request.format in ("markdown", "text") else "markdown"
+        data = await self._client.extract(
+            urls=request.urls,
+            format=fmt,
+            timeout=max(5.0, self.timeout / 1000),
+        )
         latency = (time.perf_counter() - start) * 1000
 
-        results = [
-            ExtractResult(
-                url=r.get("url", ""),
-                content=r.get("raw_content", ""),
+        pages = [
+            make_page(
+                url=r.get("url"),
+                content=r.get("raw_content") or r.get("content"),
                 title=r.get("title"),
             )
-            for r in data.get("results", [])
+            for r in (data.get("results") or [])
         ]
+        for r in data.get("failed_results") or data.get("errors") or []:
+            if isinstance(r, dict):
+                pages.append(make_page(url=r.get("url"), error=r.get("error") or "extract_failed"))
+            else:
+                pages.append(make_page(url="", error=str(r)))
 
-        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
+        return ExtractResponse(results=pages, provider=self.name, latency_ms=latency)
 
     async def research(self, request: ResearchRequest) -> ResearchResponse:
         if not self._client:
             raise RuntimeError("Not initialized")
 
         start = time.perf_counter()
-
-        # Derive max_results from depth
-        depth_map = {"mini": 5, "pro": 20, "auto": 10}
-        max_results = depth_map.get(request.depth, 10)
-
-        # tavily-python SDK handles the polling internally
-        data = await self._client.search(
-            query=request.topic,
-            search_depth="advanced",
-            max_results=max_results,
-            include_raw_content=True,
-        )
+        model = request.depth if request.depth in ("mini", "pro", "auto") else "auto"
+        timeout_s = max(120.0, self.timeout / 1000)
+        data = await self._client.research(input=request.topic, model=model, timeout=timeout_s)
+        data = await self._resolve_research(data, timeout_s=timeout_s)
         latency = (time.perf_counter() - start) * 1000
 
-        contents = []
-        sources = []
-        for r in data.get("results", []):
-            if r.get("raw_content"):
-                contents.append(r["raw_content"][:2000])
-            sources.append(r.get("url", ""))
-
+        report = text(attr(data, "content", "output", "report", "answer"))
+        if not report:
+            raise RuntimeError("Tavily research returned empty report")
+        sources = urls_from_sources(attr(data, "sources", "results", default=[]))
         return ResearchResponse(
             topic=request.topic,
-            content="\n\n---\n\n".join(contents),
+            report=report,
             sources=sources,
             provider=self.name,
             latency_ms=latency,
         )
+
+    async def _resolve_research(self, data: Any, *, timeout_s: float) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            raise RuntimeError(f"Unexpected Tavily research response type: {type(data)!r}")
+        if text(attr(data, "content", "output", "report", "answer")):
+            return data
+        status = text(attr(data, "status")).lower()
+        if status in _FAILED:
+            raise RuntimeError(
+                f"Tavily research failed: {attr(data, 'error', 'message') or status}"
+            )
+        request_id = text(attr(data, "request_id", "id"))
+        if not request_id:
+            return data
+
+        deadline = time.perf_counter() + timeout_s
+        last = data
+        while time.perf_counter() < deadline:
+            await asyncio.sleep(2.0)
+            last = await self._client.get_research(request_id)
+            if not isinstance(last, dict):
+                continue
+            st = text(attr(last, "status")).lower()
+            if text(attr(last, "content", "output", "report", "answer")) or st in _DONE:
+                return last
+            if st in _FAILED:
+                raise RuntimeError(
+                    f"Tavily research failed: {attr(last, 'error', 'message') or st}"
+                )
+        raise TimeoutError(f"Tavily research timed out after {timeout_s:.0f}s (id={request_id})")

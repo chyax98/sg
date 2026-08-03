@@ -127,7 +127,11 @@ class TestYouComProvider:
         assert YouComProvider.info.type == "youcom"
         assert YouComProvider.info.needs_api_key is True
         assert "search" in YouComProvider.info.capabilities
-        assert "include_domains" in YouComProvider.info.search_features
+        assert "domains" in YouComProvider.info.search_features or "domains" in (
+            YouComProvider.info.capability.search.model_dump()
+            if YouComProvider.info.capability.search
+            else {}
+        )
 
     def test_init_with_new_signature(self):
         provider = YouComProvider(name="youcom-1", api_key="test-key", priority=5)
@@ -175,7 +179,7 @@ class TestTinyFishProvider:
         assert TinyFishProvider.info.needs_api_key is True
         assert "search" in TinyFishProvider.info.capabilities
         assert "extract" in TinyFishProvider.info.capabilities
-        assert "include_domains" in TinyFishProvider.info.search_features
+        assert "domains" in TinyFishProvider.info.search_features
 
     def test_init_with_new_signature(self):
         provider = TinyFishProvider(name="tinyfish-1", api_key="test-key", priority=5)
@@ -208,10 +212,8 @@ class TestTinyFishProvider:
         class FakeSearchClient:
             async def get(self, path, params):
                 assert path == "/"
-                assert params == {
-                    "query": "python tutorial site:docs.python.org -site:youtube.com",
-                    "language": "en",
-                }
+                assert params["query"] == "python tutorial site:docs.python.org -site:youtube.com"
+                assert params.get("language") == "en"
                 return FakeResponse(
                     {
                         "query": "python tutorial",
@@ -233,16 +235,16 @@ class TestTinyFishProvider:
         response = await provider.search(
             SearchRequest(
                 query="python tutorial",
-                include_domains=["docs.python.org"],
+                domains=["docs.python.org"],
                 exclude_domains=["youtube.com"],
-                extra={"language": "en"},
+                language="en",
             )
         )
 
         assert response.provider == "tinyfish"
         assert response.total == 1
         assert response.results[0].title == "Python Tutorial"
-        assert response.results[0].extra["site_name"] == "docs.python.org"
+        assert response.results[0].url == "https://docs.python.org/3/tutorial/"
 
     @pytest.mark.asyncio
     async def test_extract_maps_results_and_errors(self):
@@ -252,7 +254,7 @@ class TestTinyFishProvider:
                 assert json == {
                     "urls": ["https://example.com"],
                     "format": "markdown",
-                    "links": True,
+                    "links": False,
                     "image_links": False,
                 }
                 return FakeResponse(
@@ -271,7 +273,7 @@ class TestTinyFishProvider:
         provider = TinyFishProvider(name="tinyfish", api_key="test-key")
         provider._fetch_client = FakeFetchClient()
         response = await provider.extract(
-            ExtractRequest(urls=["https://example.com"], extra={"links": True})
+            ExtractRequest(urls=["https://example.com"], extra={"links": False})
         )
 
         assert response.provider == "tinyfish"

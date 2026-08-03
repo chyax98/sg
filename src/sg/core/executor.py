@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +16,10 @@ from ..providers.registry import ProviderRegistry
 from .circuit_breaker import CircuitBreaker, FailureType
 
 logger = logging.getLogger(__name__)
+
+
+class EmptyResultError(RuntimeError):
+    """Provider returned 200-shaped payload with nothing usable — try next key/group."""
 
 
 @dataclass
@@ -33,23 +38,110 @@ class ProviderMetrics:
         return (self.successes / self.requests * 100) if self.requests else 100
 
 
+def _status_code(e: Exception) -> int | None:
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code
+    response = getattr(e, "response", None)
+    code = getattr(response, "status_code", None)
+    if isinstance(code, int):
+        return code
+    text = f"{type(e).__name__}: {e}"
+    m = re.search(r"\b([45]\d{2})\b", text)
+    return int(m.group(1)) if m else None
+
+
 def _classify_error(e: Exception) -> str:
     """Classify an exception into a failure type for the circuit breaker."""
-    if isinstance(e, httpx.HTTPStatusError):
-        code = e.response.status_code
-        if code in (401, 403):
-            return FailureType.AUTH
-        if code == 429:
-            return FailureType.QUOTA
-        if code >= 500:
-            return FailureType.TRANSIENT
-    # Check error message for common patterns
-    msg = str(e).lower()
-    if "unauthorized" in msg or "forbidden" in msg or "invalid api key" in msg:
+    if isinstance(e, EmptyResultError):
+        return FailureType.TRANSIENT
+
+    code = _status_code(e)
+    if code in (401, 403):
         return FailureType.AUTH
-    if "rate limit" in msg or "quota" in msg or "exceeded" in msg:
+    if code == 429:
+        return FailureType.QUOTA
+    if code is not None and code >= 500:
+        return FailureType.TRANSIENT
+
+    msg = f"{type(e).__name__}: {e}".lower()
+    if any(
+        k in msg
+        for k in (
+            "unauthorized",
+            "forbidden",
+            "invalid api key",
+            "invalid_api_key",
+            "authentication",
+            "api key",
+        )
+    ):
+        return FailureType.AUTH
+    if any(
+        k in msg
+        for k in (
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "quota exceeded",
+            "quota_exceeded",
+            "insufficient credits",
+        )
+    ):
         return FailureType.QUOTA
     return FailureType.TRANSIENT
+
+
+def _result_is_unusable(result: Any) -> bool:
+    """True when the call 'succeeded' but has nothing the caller can use."""
+    if result is None:
+        return True
+
+    # ResearchResponse: topic + report (+ sources)
+    if hasattr(result, "report") and hasattr(result, "topic"):
+        return not str(getattr(result, "report", "") or "").strip()
+
+    # Context7 docs context (query-docs)
+    if (
+        hasattr(result, "library_id")
+        and hasattr(result, "content")
+        and not hasattr(result, "results")
+    ):
+        return not str(getattr(result, "content", "") or "").strip()
+
+    # Context7 library resolve: empty list is a valid "no match" answer — do not failover
+    if hasattr(result, "library_name") and hasattr(result, "results"):
+        return False
+
+    results = getattr(result, "results", None)
+    if not isinstance(results, list):
+        return False
+    if not results:
+        return True
+
+    sample = results[0]
+    has_content = hasattr(sample, "content") or (isinstance(sample, dict) and "content" in sample)
+    if not has_content:
+        return False
+
+    def _page_bad(page: Any) -> bool:
+        if isinstance(page, dict):
+            err = page.get("error")
+            content = page.get("content", "")
+        else:
+            err = getattr(page, "error", None)
+            content = getattr(page, "content", "")
+        return bool(err) or not str(content or "").strip()
+
+    return all(_page_bad(page) for page in results)
+
+
+def _err_text(e: Exception | None) -> str:
+    if e is None:
+        return ""
+    text = str(e).strip()
+    if text:
+        return text
+    return repr(e)
 
 
 class Executor:
@@ -108,14 +200,17 @@ class Executor:
                 result = await operation(provider)
             latency = (time.perf_counter() - start) * 1000
 
+            if _result_is_unusable(result):
+                raise EmptyResultError(f"{name} returned empty result")
+
             breaker.record_success()
             metrics.requests += 1
             metrics.successes += 1
             metrics.total_latency_ms += latency
-            logger.info(f"Provider {name} succeeded in {latency:.1f}ms")
+            logger.info("Provider %s succeeded in %.1fms", name, latency)
             return True, result, None
         except ProviderCapabilityError as e:
-            logger.info(f"Provider {name} skipped: {e}")
+            logger.info("Provider %s skipped: %s", name, e)
             return False, None, e
         except Exception as e:
             failure_type = _classify_error(e)
@@ -123,15 +218,24 @@ class Executor:
             metrics.requests += 1
             metrics.failures += 1
 
-            disabled_hours = breaker.current_timeout_seconds / 3600
+            disabled_s = breaker.current_timeout_seconds
+            err = _err_text(e)
             if failure_type == FailureType.AUTH:
-                logger.error(f"Provider {name}: auth failure, disabled for {disabled_hours:.0f}h")
+                logger.error(
+                    "Provider %s: auth failure (%s), disabled for %.0fs",
+                    name,
+                    err,
+                    disabled_s,
+                )
             elif failure_type == FailureType.QUOTA:
                 logger.warning(
-                    f"Provider {name}: quota exceeded, disabled for {disabled_hours:.0f}h"
+                    "Provider %s: quota (%s), disabled for %.0fs",
+                    name,
+                    err,
+                    disabled_s,
                 )
             else:
-                logger.warning(f"Provider {name} failed: {e}")
+                logger.warning("Provider %s failed (%s): %s", name, type(e).__name__, err)
             return False, None, e
 
     def _candidate_groups(self, capability: str, provider: str | None = None) -> list[str]:
@@ -190,12 +294,14 @@ class Executor:
             offset = spread_index % len(groups)
             groups = groups[offset:] + groups[:offset]
 
-        max_attempts = min(len(groups), self.config.failover.max_attempts)
+        # max_attempts <= 0 → try every candidate group (local free-key pools)
+        configured = self.config.failover.max_attempts
+        max_attempts = len(groups) if configured <= 0 else min(len(groups), configured)
         last_error: Exception | None = None
         attempt_errors: list[str] = []
 
         tried_groups = groups[:max_attempts]
-        logger.debug(f"Candidate groups: {tried_groups}")
+        logger.debug("Candidate groups (%s/%s): %s", max_attempts, len(groups), tried_groups)
 
         for group_name in tried_groups:
             logger.debug(f"Trying group: {group_name}")
@@ -232,14 +338,14 @@ class Executor:
                     return result
                 last_error = error
                 if error is not None and not isinstance(error, ProviderCapabilityError):
-                    attempt_errors.append(f"{provider_instance.name}: {error}")
+                    attempt_errors.append(f"{provider_instance.name}: {_err_text(error)}")
 
                 if isinstance(error, ProviderCapabilityError):
                     break
 
         fallback_group = self.registry.get_fallback_group(capability)
         if fallback_group and fallback_group not in tried_groups:
-            logger.debug(f"All normal providers failed, trying fallback group: {fallback_group}")
+            logger.debug("All normal providers failed, trying fallback group: %s", fallback_group)
             attempted_instances = set()
             while True:
                 provider_instance = self.registry.select_instance(
@@ -258,13 +364,13 @@ class Executor:
                     operation,
                 )
                 if ok:
-                    logger.info(f"Fallback to {provider_instance.name} succeeded")
+                    logger.info("Fallback to %s succeeded", provider_instance.name)
                     return result
                 last_error = error
                 if error is not None and not isinstance(error, ProviderCapabilityError):
-                    attempt_errors.append(f"{provider_instance.name}: {error}")
+                    attempt_errors.append(f"{provider_instance.name}: {_err_text(error)}")
 
-        detail = "; ".join(attempt_errors) if attempt_errors else str(last_error)
+        detail = "; ".join(attempt_errors) if attempt_errors else _err_text(last_error)
         raise RuntimeError(f"All providers failed for '{capability}'. {detail}")
 
     def get_metrics(self) -> dict[str, dict[str, Any]]:
@@ -292,7 +398,7 @@ class Executor:
         return self._breaker(name).status()
 
     async def run_health_checks(self) -> dict[str, Any]:
-        """Explicit health check. Resets breakers for healthy providers."""
+        """Probe providers. Does not reset OPEN breakers (many probes are no-ops)."""
         healthy = []
         unhealthy = []
 
@@ -300,11 +406,10 @@ class Executor:
             try:
                 is_healthy, error = await provider.health_check()
                 if is_healthy:
-                    self._breaker(name).reset()
                     healthy.append(name)
                 else:
                     unhealthy.append({"name": name, "error": error})
             except Exception as e:
-                unhealthy.append({"name": name, "error": str(e)})
+                unhealthy.append({"name": name, "error": _err_text(e)})
 
         return {"healthy": healthy, "unhealthy": unhealthy}

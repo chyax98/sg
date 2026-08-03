@@ -1,13 +1,88 @@
 {
   "server": {
+    "host": "127.0.0.1",
     "port": 8100
   },
   "providers": {
+    "tavily": {
+      "type": "tavily",
+      "enabled": true,
+      "priority": 10,
+      "selection": "round_robin",
+      "instances": [
+        {
+          "id": "tavily-1",
+          "enabled": true,
+          "api_key": "tvly-your-key"
+        }
+      ]
+    },
+    "jina": {
+      "type": "jina",
+      "enabled": true,
+      "priority": 70,
+      "selection": "round_robin",
+      "fallback_for": [
+        "extract"
+      ],
+      "instances": [
+        {
+          "id": "jina-1",
+          "enabled": true
+        }
+      ]
+    },
     "duckduckgo": {
       "type": "duckduckgo",
       "enabled": true,
       "priority": 100,
-      "fallback_for": ["search"]
+      "selection": "round_robin",
+      "fallback_for": [
+        "search"
+      ],
+      "instances": [
+        {
+          "id": "duckduckgo",
+          "enabled": true
+        }
+      ]
+    },
+    "context7": {
+      "type": "context7",
+      "enabled": true,
+      "priority": 10,
+      "selection": "random",
+      "defaults": {
+        "timeout": 60000
+      },
+      "instances": [
+        {
+          "id": "context7-1",
+          "enabled": true,
+          "api_key": "ctx7sk-your-key"
+        },
+        {
+          "id": "context7-2",
+          "enabled": true,
+          "api_key": "ctx7sk-another-key"
+        }
+      ]
+    }
+  },
+  "executor": {
+    "health_check": {
+      "failure_threshold": 3,
+      "success_threshold": 2
+    },
+    "circuit_breaker": {
+      "base_timeout": 300,
+      "multiplier": 2,
+      "max_timeout": 3600,
+      "quota_timeout": 3600,
+      "auth_timeout": 86400
+    },
+    "failover": {
+      "max_attempts": 0
     }
   }
 }

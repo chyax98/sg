@@ -19,7 +19,7 @@ class BraveProvider(SearchProvider):
         type="brave",
         display_name="Brave Search",
         capabilities=("search",),
-        search_features=("include_domains", "exclude_domains", "time_range"),
+        search_features=("domains", "exclude_domains", "time_range", "language", "location"),
     )
 
     BASE_URL = "https://api.search.brave.com/res/v1"
@@ -59,12 +59,12 @@ class BraveProvider(SearchProvider):
 
         query = self.apply_domain_operators(
             request.query,
-            request.include_domains,
+            request.domains,
             request.exclude_domains,
         )
 
-        params: dict[str, Any] = {"q": query, "count": request.max_results}
-        if request.time_range and not request.extra.get("freshness"):
+        params: dict[str, Any] = {"q": query, "count": request.limit}
+        if request.time_range:
             freshness_map = {
                 "day": "pd",
                 "week": "pw",
@@ -73,12 +73,10 @@ class BraveProvider(SearchProvider):
             }
             if request.time_range in freshness_map:
                 params["freshness"] = freshness_map[request.time_range]
-        if request.extra.get("country"):
-            params["country"] = request.extra["country"]
-        if request.extra.get("search_lang"):
-            params["search_lang"] = request.extra["search_lang"]
-        if request.extra.get("freshness"):
-            params["freshness"] = request.extra["freshness"]
+        if request.location:
+            params["country"] = request.location
+        if request.language:
+            params["search_lang"] = request.language
 
         resp = await self._client.get("/web/search", params=params)
         resp.raise_for_status()
@@ -88,7 +86,7 @@ class BraveProvider(SearchProvider):
             SearchResult(
                 title=r.get("title", ""),
                 url=r.get("url", ""),
-                content=r.get("description", ""),
+                snippet=r.get("description", ""),
                 source=self.name,
             )
             for r in data.get("web", {}).get("results", [])

@@ -1,30 +1,38 @@
-"""Exa provider — uses official exa-py SDK."""
+"""Exa adapter — official exa-py SDK."""
+
+from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from ..models.search import (
-    ExtractRequest,
-    ExtractResponse,
-    ExtractResult,
-    SearchRequest,
-    SearchResponse,
-    SearchResult,
-)
-from .base import ExtractProvider, ProviderInfo, SearchProvider
+from ..models.search import ExtractRequest, ExtractResponse, SearchRequest, SearchResponse
+from ._assemble import attr, make_hit, make_page, optional_list, text
+from .base import ExtractProvider, ProviderInfo, SearchProvider, cap, extract_cap, search_cap
+
+_DEPTH_TO_TYPE = {
+    "basic": "auto",
+    "advanced": "deep",
+    "fast": "fast",
+    "ultra-fast": "instant",
+}
 
 
 class ExaProvider(SearchProvider, ExtractProvider):
-    """Exa: AI semantic search + content extraction.
-
-    Free 1,000/month, Pro from $10/month.
-    """
-
     info = ProviderInfo(
         type="exa",
         display_name="Exa",
-        capabilities=("search", "extract"),
-        search_features=("include_domains", "exclude_domains", "time_range", "search_depth"),
+        capability=cap(
+            search=search_cap(
+                domains=True,
+                exclude_domains=True,
+                time_range=True,
+                depth=True,
+                location=True,
+                raw_content=True,
+            ),
+            extract=extract_cap(formats=("markdown", "text"), multi_url=True),
+        ),
     )
 
     def __init__(self, **kwargs):
@@ -40,10 +48,9 @@ class ExaProvider(SearchProvider, ExtractProvider):
         api_base = self.url or self.env_value("EXA_POOL_BASE_URL")
         from exa_py import AsyncExa
 
-        if api_base:
-            self._client = AsyncExa(api_key=api_key, api_base=api_base)
-        else:
-            self._client = AsyncExa(api_key=api_key)
+        self._client = (
+            AsyncExa(api_key=api_key, api_base=api_base) if api_base else AsyncExa(api_key=api_key)
+        )
         return True
 
     async def shutdown(self) -> None:
@@ -60,82 +67,68 @@ class ExaProvider(SearchProvider, ExtractProvider):
         self.validate_search_request(request)
 
         start = time.perf_counter()
-
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "query": request.query,
-            "num_results": request.max_results,
-            "contents": {"highlights": True},
+            "num_results": request.limit,
+            "contents": (
+                {"highlights": True, "text": True}
+                if request.want_raw
+                else {"highlights": True, "text": {"max_characters": 2000}}
+            ),
+            "type": _DEPTH_TO_TYPE.get(request.depth, "auto"),
         }
-        if request.search_depth != "basic" and not request.extra.get("type"):
-            type_map = {
-                "basic": "auto",
-                "advanced": "deep",
-                "fast": "fast",
-                "ultra-fast": "instant",
-            }
-            if request.search_depth in type_map:
-                kwargs["type"] = type_map[request.search_depth]
-        if request.extra.get("type"):
-            kwargs["type"] = request.extra["type"]
-        if request.extra.get("category"):
-            kwargs["category"] = request.extra["category"]
-        if request.include_domains:
-            kwargs["include_domains"] = request.include_domains
-        if request.exclude_domains:
-            kwargs["exclude_domains"] = request.exclude_domains
+        if include := optional_list(request.domains):
+            kwargs["include_domains"] = include
+        if exclude := optional_list(request.exclude_domains):
+            kwargs["exclude_domains"] = exclude
         if request.time_range:
-            days_map = {"day": 1, "week": 7, "month": 30, "year": 365}
-            if request.time_range in days_map:
-                start_date = datetime.now(UTC) - timedelta(days=days_map[request.time_range])
-                kwargs["start_published_date"] = start_date.isoformat()
+            days = {"day": 1, "week": 7, "month": 30, "year": 365}.get(request.time_range)
+            if days:
+                kwargs["start_published_date"] = (
+                    datetime.now(UTC) - timedelta(days=days)
+                ).isoformat()
+        if request.location:
+            kwargs["user_location"] = request.location
 
         result = await self._client.search(**kwargs)
         latency = (time.perf_counter() - start) * 1000
-
-        results = []
-        for r in result.results:
-            highlights = getattr(r, "highlights", []) or []
-            content = "\n".join(highlights) if highlights else getattr(r, "text", "") or ""
-
-            results.append(
-                SearchResult(
-                    title=getattr(r, "title", "") or "",
-                    url=getattr(r, "url", "") or "",
-                    content=content,
-                    score=getattr(r, "score", 0.0) or 0.0,
+        hits = []
+        for r in getattr(result, "results", None) or []:
+            highlights = attr(r, "highlights", default=[]) or []
+            body = text(highlights, attr(r, "text"), attr(r, "summary"))
+            hits.append(
+                make_hit(
+                    title=attr(r, "title"),
+                    url=attr(r, "url"),
+                    snippet=body,
+                    score=attr(r, "score", default=0.0),
                     source=self.name,
-                    published_date=getattr(r, "published_date", None),
-                    author=getattr(r, "author", None),
+                    published_at=attr(r, "published_date"),
+                    author=attr(r, "author"),
+                    raw=attr(r, "text") if request.want_raw else None,
                 )
             )
-
         return SearchResponse(
             query=request.query,
             provider=self.name,
-            results=results,
-            total=len(results),
+            results=hits,
+            total=len(hits),
             latency_ms=latency,
         )
 
     async def extract(self, request: ExtractRequest) -> ExtractResponse:
         if not self._client:
             raise RuntimeError("Not initialized")
-
         start = time.perf_counter()
-
-        result = await self._client.get_contents(
-            urls=request.urls,
-            text=True,
-        )
-        latency = (time.perf_counter() - start) * 1000
-
-        results = [
-            ExtractResult(
-                url=getattr(r, "url", "") or "",
-                content=getattr(r, "text", "") or "",
-                title=getattr(r, "title", None),
+        result = await self._client.get_contents(urls=request.urls, text=True)
+        pages = [
+            make_page(
+                url=attr(r, "url"), content=attr(r, "text", "content"), title=attr(r, "title")
             )
-            for r in result.results
+            for r in (getattr(result, "results", None) or [])
         ]
-
-        return ExtractResponse(results=results, provider=self.name, latency_ms=latency)
+        return ExtractResponse(
+            results=pages,
+            provider=self.name,
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )

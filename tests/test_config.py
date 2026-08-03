@@ -58,12 +58,12 @@ class TestExecutorConfig:
         config = ExecutorConfig()
         assert config.health_check.failure_threshold == 3
         assert config.health_check.success_threshold == 2
-        assert config.circuit_breaker.base_timeout == 3600
-        assert config.circuit_breaker.multiplier == 6.0
-        assert config.circuit_breaker.max_timeout == 172800
-        assert config.circuit_breaker.quota_timeout == 86400
-        assert config.circuit_breaker.auth_timeout == 604800
-        assert config.failover.max_attempts == 3
+        assert config.circuit_breaker.base_timeout == 300
+        assert config.circuit_breaker.multiplier == 2.0
+        assert config.circuit_breaker.max_timeout == 3600
+        assert config.circuit_breaker.quota_timeout == 3600
+        assert config.circuit_breaker.auth_timeout == 86400
+        assert config.failover.max_attempts == 0
 
     def test_custom_values(self):
         config = ExecutorConfig(

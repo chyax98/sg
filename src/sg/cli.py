@@ -214,9 +214,7 @@ def _print_result_file(data: dict) -> None:
 @click.argument("queries", nargs=-1, required=True)
 @click.option("--provider", "-p", default=None, help="Search provider")
 @click.option("--max", "-n", default=10, help="Max results")
-@click.option(
-    "--include-domain", "include_domains", multiple=True, help="Restrict search to a domain"
-)
+@click.option("--include-domain", "domains", multiple=True, help="Restrict search to a domain")
 @click.option(
     "--exclude-domain", "exclude_domains", multiple=True, help="Exclude a domain from search"
 )
@@ -226,20 +224,16 @@ def _print_result_file(data: dict) -> None:
     type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]),
     default="basic",
 )
-@click.option(
-    "--extra", "-e", default=None, help='Extra params as JSON (e.g. \'{"location":"CN"}\')'
-)
 @click.option("--port", default=8100, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
     queries: tuple[str, ...],
     provider: str | None,
     max: int,
-    include_domains: tuple[str, ...],
+    domains: tuple[str, ...],
     exclude_domains: tuple[str, ...],
     time_range: str | None,
-    search_depth: str,
-    extra: str | None,
+    depth: str,
     port: int,
     config: str | None,
 ):
@@ -247,24 +241,13 @@ def search(
     # Ensure gateway is running, start if needed
     _ensure_gateway_or_exit(port, config)
 
-    import json
-
-    extra_dict = {}
-    if extra:
-        try:
-            extra_dict = json.loads(extra)
-        except json.JSONDecodeError:
-            click.echo(f"Error: Invalid JSON in --extra: {extra}", err=True)
-            sys.exit(1)
-
     payload = {
         "provider": provider,
-        "max_results": max,
-        "include_domains": list(include_domains),
+        "limit": max,
+        "domains": list(domains),
         "exclude_domains": list(exclude_domains),
         "time_range": time_range,
-        "search_depth": search_depth,
-        "extra": extra_dict,
+        "depth": depth,
     }
 
     try:
