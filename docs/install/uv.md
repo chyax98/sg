@@ -80,3 +80,4 @@ rm -rf ~/.sg                  # 可选：清配置和历史
 | `~/.sg/config.json: not found` | 跑 `search-gateway init` |
 | DuckDuckGo 慢/被限 | 配 Tavily / Exa 等付费 provider，见 `docs/providers/` |
 | git install 慢 / 失败 | GitHub 网络问题，可镜像或先 `git clone` 再 `uv tool install .`（见 [source.md](source.md)） |
+| 升级后行为没变（uv 没拉最新 commit） | uv 的 git source 有 commit-hash 缓存，`--no-cache` 也清不掉。两种解决：① 显式指定 commit/tag：`uv tool install --force --reinstall "git+https://github.com/chyax98/sg@<sha>"`；② 先 `git clone` 到本地再 `uv tool install --force --reinstall .` |
