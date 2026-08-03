@@ -22,9 +22,10 @@
 
 ## 目录
 
+- [For AI Assistants](#for-ai-assistants)
 - [特性](#特性)
 - [快速开始](#快速开始)
-- [AI Skill 安装](#ai-skill-安装)
+- [集成方案对比](#集成方案对比)
 - [MCP 集成](#mcp-集成claude-desktopcode)
 - [CLI 命令](#cli-命令)
 - [HTTP API](#http-api)
@@ -34,6 +35,33 @@
 - [开发工具](#开发工具)
 - [架构设计](#架构设计)
 - [贡献](#贡献)
+
+## For AI Assistants
+
+如果你是 AI 编码助手在读这份 README，下面是紧凑的能力地图。
+
+| 你想做的事 | 命令 | 文档 |
+|---|---|---|
+| 拿到给 AI 看的使用指南原文 | `search-gateway skill get` | [SKILL.md 打印到 stdout](#skill) |
+| 让 AI 引导式帮我配置 | `search-gateway setup` | [setup prompt](prompts/setup.md) |
+| 接入 OpenCode（websearch / webfetch / context7） | `search-gateway plugin install && search-gateway plugin setup` | [plugins/opencode/README.md](plugins/opencode/README.md) |
+| 启动 daemon | `search-gateway start --daemon` | [docs/install/uv.md](docs/install/uv.md) |
+| 搜索 / 提取 / 研究 | `search-gateway search\|extract\|research ...` | [CLI 命令](#cli-命令) |
+
+**第一条建议**：先跑 `search-gateway skill get` 读一遍 SKILL.md，再决定要哪种集成方式。
+
+## 集成方案对比
+
+| 方案 | 适用场景 | 一行命令 / 配置 |
+|---|---|---|
+| CLI | Shell / 脚本 | `search-gateway search "q"` |
+| HTTP API | 任意语言客户端 | `search-gateway start` → `http://127.0.0.1:8100` |
+| MCP stdio | Claude Code/Desktop、Codex、Kimi、Gemini CLI | `claude mcp add search-gateway stdio search-gateway mcp` |
+| MCP Streamable HTTP | OpenCode remote MCP | `opencode.json` 的 `mcp` 段加 `http://127.0.0.1:8100/mcp` |
+| OpenCode Plugin | opencode 原生工具（覆盖内置 websearch/webfetch） | `search-gateway plugin install && search-gateway plugin setup` |
+| Python SDK | Python 代码内调用 | `from sg.sdk import SearchClient` |
+
+> 各种安装/集成方案的自闭环文档见 `docs/install/`。
 
 ## 快速开始
 
@@ -153,19 +181,17 @@ search-gateway web          # 打开 Web UI
 search-gateway stop         # 停止网关
 ```
 
-## AI Skill 安装
+## Skill
 
-让 AI 编码助手自动使用 Search Gateway 进行网络搜索，推荐安装 Skill：
+`search-gateway skill get` 是**读取方式**——打印 SKILL.md 原文到 stdout。SKILL 内容打包在包内，谁需要 sg 的使用说明，就直接调用这个命令读取：
 
 ```bash
-# 默认安装到 ~/.agents/skills/search-gateway
-search-gateway skill install
+# AI 助手运行时用 bash 工具调用，从 stdout 直接拿到内容作为上下文
+search-gateway skill get
 
-# 或安装到 Claude Code 的 skills 目录
-search-gateway skill install --path ~/.claude/skills
+# 人想看一眼
+search-gateway skill get | less
 ```
-
-安装后，当 AI 遇到搜索需求时会**自动触发**，优先调用 `search-gateway search` / `research` / `extract`。
 
 ### 开发工具
 

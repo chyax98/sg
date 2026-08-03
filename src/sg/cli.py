@@ -14,7 +14,20 @@ from ._utils import ensure_gateway_running
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli():
-    """Search Gateway — unified search with failover."""
+    """Search Gateway — unified search with failover.
+
+    \b
+    使用指南：
+      search-gateway skill get             打印 SKILL.md 原文到 stdout（AI 助手视角）
+      search-gateway setup                 输出 AI 配置向导 prompt（交互式引导）
+      search-gateway plugin install        装 opencode 插件到 ~/.config/opencode/plugins/
+      search-gateway plugin setup          把 plugin 引用写入 opencode.json（idempotent）
+      search-gateway init                  初始化 ~/.sg/config.json
+
+    \b
+    完整文档：https://github.com/chyax98/sg
+    安装方案：docs/install/{uv,source,macos-daemon}.md
+    """
     pass
 
 
@@ -718,11 +731,9 @@ def plugin_install(path: str | None, force: bool):
 @skill.command(name="get")
 @click.argument("name", required=False, default="search-gateway")
 def skill_get(name: str):
-    """Print SKILL.md content to stdout (no file installation).
+    """Print SKILL.md content to stdout.
 
-    Pack SKILL inside the package; users pipe it wherever they want, e.g.:
-
-        search-gateway skill get > ~/.agents/skills/search-gateway/SKILL.md
+    SKILL 内容打包在包内；AI 助手运行时直接调用读取 stdout。
     """
     available = {"search-gateway": _SKILL_MD}
     content = available.get(name)
