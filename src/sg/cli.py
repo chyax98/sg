@@ -715,29 +715,87 @@ def plugin_install(path: str | None, force: bool):
     click.echo("\nNext: add to opencode.json plugin array, then restart opencode.")
 
 
-@skill.command(name="install")
-@click.option(
-    "--path",
-    "-p",
-    default=None,
-    help="Skills root directory (default: ~/.agents/skills)",
-)
-def skill_install(path: str | None):
-    """Install Search Gateway skill for AI assistants."""
-    skills_dir = Path(path).expanduser() if path else Path.home() / ".agents" / "skills"
-    target = skills_dir / "search-gateway"
+@skill.command(name="get")
+@click.argument("name", required=False, default="search-gateway")
+def skill_get(name: str):
+    """Print SKILL.md content to stdout (no file installation).
 
-    if not click.confirm(f"Install skill to {target}?"):
-        click.echo("Cancelled.")
+    Pack SKILL inside the package; users pipe it wherever they want, e.g.:
+
+        search-gateway skill get > ~/.agents/skills/search-gateway/SKILL.md
+    """
+    available = {"search-gateway": _SKILL_MD}
+    content = available.get(name)
+    if content is None:
+        click.echo(
+            f"Error: unknown skill '{name}'. Available: {', '.join(sorted(available))}",
+            err=True,
+        )
+        sys.exit(1)
+    click.echo(content, nl=False)
+
+
+@plugin.command(name="setup")
+@click.option(
+    "--config",
+    "-c",
+    default=None,
+    help="opencode.json path (default: ~/.config/opencode/opencode.json)",
+)
+def plugin_setup(config: str | None):
+    """Add Search Gateway plugin entries to opencode.json (idempotent)."""
+    import json
+
+    config_path = (
+        Path(config).expanduser()
+        if config
+        else Path.home() / ".config" / "opencode" / "opencode.json"
+    )
+    if not config_path.is_file():
+        click.echo(f"Error: {config_path} not found", err=True)
+        sys.exit(1)
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: invalid JSON in {config_path}: {e}", err=True)
+        sys.exit(1)
+
+    existing = data.get("plugin", [])
+    if not isinstance(existing, list):
+        click.echo("Error: 'plugin' field is not a list in opencode.json", err=True)
+        sys.exit(1)
+
+    plugins_dir = Path.home() / ".config" / "opencode" / "plugins"
+    targets = [
+        str(plugins_dir / "search-gateway-web.js"),
+        str(plugins_dir / "search-gateway-context7.js"),
+    ]
+
+    def _entry_path(entry: object) -> str | None:
+        if isinstance(entry, str):
+            return entry
+        if isinstance(entry, list) and entry:
+            first = entry[0]
+            return first if isinstance(first, str) else None
+        return None
+
+    existing_paths = {_entry_path(e) for e in existing}
+    added = [t for t in targets if t not in existing_paths]
+
+    if not added:
+        click.echo(f"✓ All Search Gateway plugins already referenced in {config_path}")
         return
 
-    target.mkdir(parents=True, exist_ok=True)
-    skill_file = target / "SKILL.md"
-    skill_file.write_text(_SKILL_MD, encoding="utf-8")
-
-    click.echo(f"\n✓ Skill installed: {skill_file}")
-    click.echo("\nSupported AI tools will now automatically use search-gateway for web search.")
-    click.echo("\nTip: Restart your AI coding assistant to load the new skill.")
+    data["plugin"] = [*existing, *added]
+    config_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    click.echo(f"✓ Added {len(added)} plugin(s) to {config_path}:")
+    for p in added:
+        click.echo(f"  - {Path(p).name}")
+    click.echo("\nRestart opencode to load the plugins.")
 
 
 if __name__ == "__main__":
