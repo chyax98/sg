@@ -68,16 +68,22 @@
 ### 安装
 
 ```bash
-# 全局安装（推荐）
-uv tool install .
+# 从 GitHub 直装（推荐，无需 clone）
+uv tool install git+https://github.com/chyax98/sg
 
-# 开发模式（代码修改自动生效）
+# 锁版本（推荐生产用）
+uv tool install "git+https://github.com/chyax98/sg@v1.0.8"
+
+# 开发模式（clone 后代码修改自动生效）
+git clone https://github.com/chyax98/sg && cd sg
 uv tool install --editable .
 
-# 或使用 Makefile
+# 或使用 Makefile（仓库内）
 make install    # 全局安装
 make dev        # 开发模式
 ```
+
+> 不发 PyPI，安装源就是 GitHub。完整安装方案见 [docs/install/](docs/install/)。
 
 ### 配置
 

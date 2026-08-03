@@ -4,7 +4,7 @@
 
 ## 前置
 
-- 已 `uv tool install search-gateway`（见 [uv.md](uv.md)）
+- 已 `uv tool install git+https://github.com/chyax98/sg`（见 [uv.md](uv.md)）
 - `~/.sg/config.json` 已初始化（`search-gateway init`）
 - `which search-gateway` 能找到（通常 `~/.local/bin/search-gateway`）
 

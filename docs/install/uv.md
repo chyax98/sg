@@ -1,14 +1,18 @@
-# uv install（推荐）
+# uv + git install（推荐）
 
 终端用户最快上手方案。需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。
+
+不发 PyPI，安装源就是 GitHub 仓库。
 
 ## 一行安装
 
 ```bash
-uv tool install search-gateway
-```
+# 最新 main
+uv tool install git+https://github.com/chyax98/sg
 
-> 仓库内安装：`git clone https://github.com/chyax98/sg && cd sg && uv tool install .`
+# 锁 tag（推荐，等于固定版本）
+uv tool install "git+https://github.com/chyax98/sg@v1.0.8"
+```
 
 ## 验证
 
@@ -52,8 +56,11 @@ curl -s http://127.0.0.1:8100/status | python3 -m json.tool
 ## 升级
 
 ```bash
-uv tool install --upgrade search-gateway
-# 仓库内：cd sg && git pull && uv tool install --force .
+# 拉最新 main 重装
+uv tool install --force --reinstall git+https://github.com/chyax98/sg
+
+# 或锁某个 tag
+uv tool install --force --reinstall "git+https://github.com/chyax98/sg@v1.0.9"
 ```
 
 ## 卸载
@@ -72,3 +79,4 @@ rm -rf ~/.sg                  # 可选：清配置和历史
 | 启动报端口占用 | `search-gateway stop` 再 start，或 `start --port 8101` |
 | `~/.sg/config.json: not found` | 跑 `search-gateway init` |
 | DuckDuckGo 慢/被限 | 配 Tavily / Exa 等付费 provider，见 `docs/providers/` |
+| git install 慢 / 失败 | GitHub 网络问题，可镜像或先 `git clone` 再 `uv tool install .`（见 [source.md](source.md)） |
