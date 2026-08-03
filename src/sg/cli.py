@@ -978,11 +978,15 @@ def daemon_install(port: int, force: bool):
 
     plist_path = agents_dir / f"{_DAEMON_LABEL}.plist"
 
-    # Idempotent: 已装且未要求 force
+    # Idempotent + self-healing: 已装且关键配置（bin 路径 + 端口）都对，才跳过。
+    # 路径漂移（如 .venv → ~/.local/bin）自动重写，不需要 --force。
     if plist_path.exists() and not force:
-        click.echo(f"✓ Already installed at {plist_path}")
-        click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
-        return
+        existing = plist_path.read_text(encoding="utf-8")
+        if bin_path in existing and f"<string>{port}</string>" in existing:
+            click.echo(f"✓ Already installed at {plist_path}")
+            click.echo("  Use --force to reinstall, or 'daemon uninstall' first.")
+            return
+        click.echo(f"Detected drift in {plist_path}, rewriting...")
 
     # 清理 legacy label (com.xd.search-gateway)
     legacy_plist = agents_dir / f"{_DAEMON_LABEL_LEGACY}.plist"
