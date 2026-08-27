@@ -43,6 +43,7 @@ bootout 服务并删除 plist。
 - `ThrottleInterval=10`：崩溃后至少间隔 10 秒再拉起，避免疯狂重启
 - 日志：`~/.sg/logs/launchd-{stdout,stderr}.log` + `~/.sg/logs/gateway.log`
 - 端口：默认 8100，可 `--port` 自定义
+- 运行时登记：`~/.sg/runtime.json`（记录端口、PID、模式和启动时间，供 CLI 复用）
 
 ## 要求
 

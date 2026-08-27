@@ -33,13 +33,19 @@ search-gateway research "topic" -d pro           # 深度研究模式
 ### 服务管理
 
 ```bash
-search-gateway start              # 启动 HTTP 服务器（端口 8100）
+search-gateway --version          # 查看 CLI 版本
+search-gateway start              # 复用已登记实例；无实例时前台启动
+search-gateway start --daemon     # 后台启动并登记实例
 search-gateway stop               # 停止服务器
 search-gateway status             # 查看状态
 search-gateway providers          # 查看 Provider 列表及熔断器状态
 search-gateway health             # 运行健康检查
 search-gateway history            # 查看搜索历史
 ```
+
+未显式传入 `--port` 时，CLI 优先复用 `~/.sg/runtime.json` 中最近登记的实例端口；服务可用性以 HTTP `/status` 为准。
+
+历史列表会输出每条记录的 `id`，可使用 `search-gateway history <id>` 查看完整结果。
 
 ---
 

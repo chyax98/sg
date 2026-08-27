@@ -100,9 +100,12 @@ vim ~/.sg/config.json
 ### 启动
 
 ```bash
-search-gateway start              # 默认端口 8100
+search-gateway start              # 复用已登记实例；无实例时以前台方式启动
+search-gateway start --daemon     # 后台启动并登记实例
 search-gateway start --port 9000  # 自定义端口
 ```
+
+CLI 会把已启动实例的端口、PID 和运行模式登记到 `~/.sg/runtime.json`。未显式传入 `--port` 时优先复用最近登记的端口；显式端口始终优先。运行时文件只用于发现实例，服务是否可用仍以 HTTP `/status` 为准。
 
 ### MCP 集成（Claude Desktop / Claude Code）
 
@@ -170,7 +173,7 @@ claude mcp add search-gateway stdio search-gateway mcp
 # 搜索
 search-gateway search "MCP protocol"
 search-gateway search "AI news" -p brave          # 指定 provider
-search-gateway search "Python tutorial" -f json   # JSON 输出
+search-gateway search "Python tutorial" -n 5       # 限制结果数；结果以内联文本输出
 
 # 内容提取
 search-gateway extract https://example.com
@@ -179,10 +182,11 @@ search-gateway extract https://example.com
 search-gateway research "AI agents trends" --depth pro
 
 # 管理
+search-gateway --version   # 查看 CLI 版本
 search-gateway status       # 网关状态（含 circuit breaker 状态）
 search-gateway providers    # Provider 列表
 search-gateway health       # 健康检查
-search-gateway history      # 搜索历史
+search-gateway history      # 搜索历史（列表包含可用于查看详情的 id）
 search-gateway web          # 打开 Web UI
 search-gateway stop         # 停止网关
 ```

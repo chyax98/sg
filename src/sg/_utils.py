@@ -1,10 +1,13 @@
 """Utility functions for CLI."""
 
+import os
 import subprocess
 import sys
 import time
 
 import httpx
+
+from ._runtime import remove_instance
 
 
 def is_gateway_running(port: int = 8100) -> bool:
@@ -32,6 +35,7 @@ def start_gateway_background(port: int = 8100, config: str | None = None) -> boo
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            env={**os.environ, "SEARCH_GATEWAY_RUNTIME_MODE": "background"},
         )
     except OSError as e:
         raise RuntimeError(f"Failed to start gateway background process: {e}") from e
@@ -49,6 +53,8 @@ def ensure_gateway_running(port: int = 8100, config: str | None = None) -> bool:
     """Ensure gateway is running, start if needed. Returns True if running."""
     if is_gateway_running(port):
         return True
+    # A stopped/crashed process may leave runtime metadata behind.
+    remove_instance(port)
     start_gateway_background(port, config)
     if is_gateway_running(port):
         return True

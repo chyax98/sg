@@ -13,10 +13,18 @@ import click
 import httpx
 
 from ._agent_output import format_extract_output, format_research_output, format_search_output
-from ._utils import ensure_gateway_running
+from ._runtime import (
+    latest_instance,
+    pid_for_port,
+    record_instance,
+    remove_instance,
+    startup_lock,
+)
+from ._utils import ensure_gateway_running, is_gateway_running
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
+@click.version_option(package_name="search-gateway", prog_name="search-gateway")
 def cli():
     """Search Gateway — unified search with failover.
 
@@ -41,6 +49,32 @@ def _ensure_gateway_or_exit(port: int, config: str | None = None) -> None:
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _resolve_port(port: int | None) -> int:
+    """Resolve an explicit port, then the latest recorded local instance."""
+    if port is not None:
+        return port
+    instance = latest_instance()
+    recorded_port = instance.get("port") if instance else None
+    return recorded_port if isinstance(recorded_port, int) and recorded_port > 0 else 8100
+
+
+def _runtime_mode() -> str:
+    if os.environ.get("XPC_SERVICE_NAME") == "com.search-gateway":
+        return "launchd"
+    return os.environ.get("SEARCH_GATEWAY_RUNTIME_MODE", "foreground")
+
+
+def _record_existing_instance(port: int) -> None:
+    """Recover metadata for a running instance started before runtime tracking."""
+    pid = pid_for_port(port)
+    if not pid:
+        return
+    instance = latest_instance()
+    if instance and instance.get("port") == port and instance.get("pid") == pid:
+        return
+    record_instance(port, pid, mode="existing")
 
 
 def _extract_http_error_detail(error: httpx.HTTPStatusError) -> str:
@@ -72,7 +106,7 @@ def _exit_for_request_error(error: Exception) -> None:
 
 
 @cli.command()
-@click.option("--port", "-p", default=8100, help="Gateway port")
+@click.option("--port", "-p", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 @click.option(
     "--log-level",
@@ -82,14 +116,21 @@ def _exit_for_request_error(error: Exception) -> None:
 )
 @click.option("--log-file", default=None, help="Log file path (default: console only)")
 @click.option("--daemon", "-d", is_flag=True, help="Run in background (daemon mode)")
-def start(port: int, config: str | None, log_level: str, log_file: str | None, daemon: bool):
+def start(port: int | None, config: str | None, log_level: str, log_file: str | None, daemon: bool):
     """Start the gateway server."""
+    port = _resolve_port(port)
     import warnings
 
     os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
     warnings.filterwarnings("ignore")
 
     # If daemon mode, start in background
+    with startup_lock():
+        if is_gateway_running(port):
+            _record_existing_instance(port)
+            click.echo(f"Gateway already running; reusing http://127.0.0.1:{port}")
+            return
+
     if daemon:
         import subprocess
         from pathlib import Path
@@ -104,7 +145,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
         cmd = [
             sys.executable,
             "-m",
-            "sg.cli",
+            "sg",
             "start",
             "--port",
             str(port),
@@ -122,6 +163,7 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            env={**os.environ, "SEARCH_GATEWAY_RUNTIME_MODE": "daemon"},
         )
 
         click.echo(f"Starting Search Gateway in background (PID: {process.pid})...")
@@ -172,13 +214,17 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
         gateway = Gateway(config_path=config, port=port)
         await gateway.start()
+        record_instance(port, os.getpid(), mode=_runtime_mode())
         click.echo(f"\n  HTTP API:  http://127.0.0.1:{port}")
         click.echo(f"  MCP HTTP:  http://127.0.0.1:{port}/mcp")
         click.echo(f"  Web UI:    http://127.0.0.1:{port}")
         click.echo(
             "\n  Commands:  search-gateway search 'query' | search-gateway status | search-gateway stop\n"
         )
-        await gateway.wait_shutdown()
+        try:
+            await gateway.wait_shutdown()
+        finally:
+            remove_instance(port, pid=os.getpid())
 
     try:
         asyncio.run(run())
@@ -187,14 +233,15 @@ def start(port: int, config: str | None, log_level: str, log_file: str | None, d
 
 
 @cli.command()
-@click.option("--port", "-p", default=8100, help="Gateway port")
+@click.option("--port", "-p", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def mcp(port: int, config: str | None):
+def mcp(port: int | None, config: str | None):
     """Start MCP server in stdio mode (for Claude Desktop).
 
     Connects to a running gateway daemon (starts one if needed) and exposes
     MCP tools for LLM integration.
     """
+    port = _resolve_port(port)
     import warnings
 
     warnings.filterwarnings("ignore")
@@ -212,11 +259,16 @@ def mcp(port: int, config: str | None):
 
 
 @cli.command()
-@click.option("--port", "-p", default=8100, help="Gateway port")
-def stop(port: int):
+@click.option("--port", "-p", default=None, type=int, help="Gateway port")
+def stop(port: int | None):
     """Stop the gateway server."""
+    port = _resolve_port(port)
+    instance = latest_instance()
+    recorded_pid = instance.get("pid") if instance and instance.get("port") == port else None
+    pid = recorded_pid if isinstance(recorded_pid, int) else None
     try:
         httpx.post(f"http://127.0.0.1:{port}/shutdown", timeout=5.0).raise_for_status()
+        remove_instance(port, pid=pid)
         click.echo("Gateway stopped.")
     except Exception as e:
         _exit_for_request_error(e)
@@ -243,7 +295,7 @@ def _print_result_file(data: dict) -> None:
     type=click.Choice(["basic", "advanced", "fast", "ultra-fast"]),
     default="basic",
 )
-@click.option("--port", default=8100, help="Gateway port")
+@click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def search(
     queries: tuple[str, ...],
@@ -253,11 +305,12 @@ def search(
     exclude_domains: tuple[str, ...],
     time_range: str | None,
     depth: str,
-    port: int,
+    port: int | None,
     config: str | None,
 ):
-    """Execute one or more search queries. Prints result file path(s)."""
+    """Execute one or more search queries and print inline results."""
     # Ensure gateway is running, start if needed
+    port = _resolve_port(port)
     _ensure_gateway_or_exit(port, config)
 
     payload = {
@@ -274,7 +327,8 @@ def search(
             resp = httpx.post(
                 f"http://127.0.0.1:{port}/search",
                 json={"query": queries[0], **payload},
-                timeout=30.0,
+                # A request may try several provider groups, each with its own timeout.
+                timeout=180.0,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -283,7 +337,7 @@ def search(
             resp = httpx.post(
                 f"http://127.0.0.1:{port}/search/batch",
                 json={"queries": list(queries), **payload},
-                timeout=60.0,
+                timeout=180.0,
             )
             resp.raise_for_status()
             for data in resp.json():
@@ -300,18 +354,19 @@ def search(
 @click.option(
     "--extra", "-e", default=None, help='Extra params as JSON (e.g. \'{"device":"mobile"}\')'
 )
-@click.option("--port", default=8100, help="Gateway port")
+@click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
 def extract(
     urls: tuple[str],
     provider: str | None,
     format: str,
     extra: str | None,
-    port: int,
+    port: int | None,
     config: str | None,
 ):
     """Extract content from URLs."""
     # Ensure gateway is running, start if needed
+    port = _resolve_port(port)
     _ensure_gateway_or_exit(port, config)
     try:
         import json
@@ -327,7 +382,8 @@ def extract(
         resp = httpx.post(
             f"http://127.0.0.1:{port}/extract",
             json={"urls": list(urls), "provider": provider, "format": format, "extra": extra_dict},
-            timeout=60.0,
+            # Multi-provider extraction can fail over sequentially.
+            timeout=300.0,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -340,11 +396,12 @@ def extract(
 @cli.command()
 @click.argument("topic")
 @click.option("--depth", "-d", default="auto", type=click.Choice(["mini", "pro", "auto"]))
-@click.option("--port", default=8100, help="Gateway port")
+@click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def research(topic: str, depth: str, port: int, config: str | None):
+def research(topic: str, depth: str, port: int | None, config: str | None):
     """Execute deep research on a topic."""
     # Ensure gateway is running, start if needed
+    port = _resolve_port(port)
     _ensure_gateway_or_exit(port, config)
 
     try:
@@ -362,10 +419,11 @@ def research(topic: str, depth: str, port: int, config: str | None):
 
 
 @cli.command()
-@click.option("--port", default=8100, help="Gateway port")
+@click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def status(port: int, config: str | None):
+def status(port: int | None, config: str | None):
     """Show gateway status."""
+    port = _resolve_port(port)
     # Ensure gateway is running, start if needed
     _ensure_gateway_or_exit(port, config)
     try:
@@ -379,6 +437,11 @@ def status(port: int, config: str | None):
         click.echo(f"  Strategy:  {data.get('strategy', 'N/A')}")
         click.echo(f"  Providers: {len(data['providers']['available'])} available")
         click.echo(f"  Available: {', '.join(data['providers']['available'])}")
+        instance = latest_instance()
+        if instance and instance.get("port") == port:
+            click.echo(
+                f"  Runtime:   pid={instance.get('pid')} mode={instance.get('mode')}"
+            )
 
         if data.get("metrics"):
             click.echo("\n  Metrics:")
@@ -403,10 +466,11 @@ def status(port: int, config: str | None):
 
 
 @cli.command()
-@click.option("--port", default=8100, help="Gateway port")
+@click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
-def providers(port: int, config: str | None):
+def providers(port: int | None, config: str | None):
     """List available providers."""
+    port = _resolve_port(port)
     # Ensure gateway is running, start if needed
     _ensure_gateway_or_exit(port, config)
     try:
@@ -442,9 +506,10 @@ def providers(port: int, config: str | None):
 
 
 @cli.command()
-@click.option("--port", default=8100, help="Gateway port")
-def health(port: int):
+@click.option("--port", default=None, type=int, help="Gateway port")
+def health(port: int | None):
     """Run health check on all providers."""
+    port = _resolve_port(port)
     try:
         resp = httpx.post(f"http://127.0.0.1:{port}/health-check", timeout=30.0)
         resp.raise_for_status()
@@ -465,9 +530,10 @@ def health(port: int):
 @click.argument("entry_id", required=False, default=None)
 @click.option("--clear", is_flag=True, help="Clear all history")
 @click.option("--limit", "-n", default=20, help="Number of entries to show")
-@click.option("--port", default=8100, help="Gateway port")
-def history(entry_id: str | None, clear: bool, limit: int, port: int):
+@click.option("--port", default=None, type=int, help="Gateway port")
+def history(entry_id: str | None, clear: bool, limit: int, port: int | None):
     """Show search history."""
+    port = _resolve_port(port)
     try:
         if clear:
             resp = httpx.delete(f"http://127.0.0.1:{port}/api/history", timeout=5.0)
@@ -509,7 +575,9 @@ def history(entry_id: str | None, clear: bool, limit: int, port: int):
         click.echo(f"\nRecent Searches ({len(entries)})\n")
         for e in entries:
             ts = e["timestamp"][:19].replace("T", " ")
-            click.echo(f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)")
+            click.echo(
+                f"  {ts}  [{e['provider']}]  {e['query']}  ({e['total']} results)  id={e['id']}"
+            )
         click.echo("\nUse 'search-gateway history <id>' to see full results.")
 
     except Exception as e:
@@ -642,6 +710,7 @@ description: >
 
 - `search-gateway status` 显示 running；没跑就 `search-gateway start --daemon`
 - 首次使用：`search-gateway init` 创建 `~/.sg/config.json`（不配 key 默认用 DuckDuckGo）
+- CLI 会复用 `~/.sg/runtime.json` 中最近登记的端口；显式 `--port` 优先，服务可用性以 HTTP `/status` 为准
 
 ## 核心命令（CLI 直接用）
 
@@ -667,7 +736,7 @@ description: >
 | Claude Code MCP | `claude mcp add search-gateway stdio search-gateway mcp` |
 | Codex / Kimi（TOML） | `[mcp_servers.search-gateway]` `command = "search-gateway"` `args = ["mcp"]` |
 | Gemini CLI（JSON） | `~/.gemini/settings.json` 的 `mcpServers.search-gateway` |
-| HTTP API（任意语言） | `search-gateway start` 后 POST `http://127.0.0.1:8100/{search,extract,research}` |
+| HTTP API（任意语言） | `search-gateway start` 后 POST 当前实例的 `http://127.0.0.1:<port>/{search,extract,research}` |
 | Python SDK | `from sg.sdk import SearchClient` |
 
 ## macOS daemon 自启（可选）
