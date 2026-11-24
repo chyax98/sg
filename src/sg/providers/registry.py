@@ -18,6 +18,7 @@ def _register_builtins():
     """Register all built-in provider classes."""
     from .brave import BraveProvider
     from .context7 import Context7Provider
+    from .defuddle import DefuddleProvider
     from .duckduckgo import DuckDuckGoProvider
     from .exa import ExaProvider
     from .firecrawl import FirecrawlProvider
@@ -29,6 +30,7 @@ def _register_builtins():
     from .youcom import YouComProvider
 
     for cls in (
+        DefuddleProvider,
         DuckDuckGoProvider,
         TavilyProvider,
         BraveProvider,

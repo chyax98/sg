@@ -91,5 +91,39 @@ def format_research_output(result: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip()
 
 
+def format_docs_search_output(result: dict[str, Any]) -> str:
+    """Inline Context7 library search hits."""
+    hits = result.get("results") or []
+    if not hits:
+        return "No matching libraries found."
+
+    lines: list[str] = []
+    for i, item in enumerate(hits, 1):
+        lib_id = _s(item.get("id"))
+        title = _s(item.get("title")) or lib_id
+        desc = _s(item.get("description"))
+        meta_parts: list[str] = []
+        if item.get("total_snippets"):
+            meta_parts.append(f"snippets={item['total_snippets']}")
+        if item.get("benchmark_score") is not None:
+            meta_parts.append(f"score={item['benchmark_score']}")
+        meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+        lines.append(f"{i}. {title} — `{lib_id}`{meta}")
+        if desc:
+            lines.append(f"   {desc}")
+    return "\n".join(lines).rstrip()
+
+
+def format_docs_context_output(result: dict[str, Any]) -> str:
+    """Inline Context7 docs context."""
+    lib_id = _s(result.get("library_id"))
+    content = _s(result.get("content"))
+    if not content:
+        return f"No documentation found for {lib_id or 'library'}."
+    if lib_id:
+        return f"# {lib_id}\n\n{content}"
+    return content
+
+
 MCP_SERVER_INSTRUCTIONS = """Tool results are full text inline. Use each tool according to its own description.
 """

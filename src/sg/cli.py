@@ -12,7 +12,13 @@ from pathlib import Path
 import click
 import httpx
 
-from ._agent_output import format_extract_output, format_research_output, format_search_output
+from ._agent_output import (
+    format_docs_context_output,
+    format_docs_search_output,
+    format_extract_output,
+    format_research_output,
+    format_search_output,
+)
 from ._runtime import (
     latest_instance,
     pid_for_port,
@@ -418,6 +424,136 @@ def research(topic: str, depth: str, port: int | None, config: str | None):
         _exit_for_request_error(e)
 
 
+@cli.group()
+def docs():
+    """Query library documentation via Context7 (resolve + query-docs)."""
+    pass
+
+
+@docs.command(name="search")
+@click.argument("library_name")
+@click.argument("query")
+@click.option("--fast", is_flag=True, help="Fast mode (lower latency)")
+@click.option("--provider", "-p", default=None, help="Context7 provider instance")
+@click.option("--port", default=None, type=int, help="Gateway port")
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def docs_search(
+    library_name: str,
+    query: str,
+    fast: bool,
+    provider: str | None,
+    port: int | None,
+    config: str | None,
+):
+    """Resolve a library name to Context7 library IDs."""
+    port = _resolve_port(port)
+    _ensure_gateway_or_exit(port, config)
+    try:
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/docs/search",
+            json={
+                "library_name": library_name,
+                "query": query,
+                "fast": fast,
+                "provider": provider,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        click.echo(format_docs_search_output(resp.json()))
+    except Exception as e:
+        _exit_for_request_error(e)
+
+
+@docs.command(name="context")
+@click.argument("library_id")
+@click.argument("query")
+@click.option("--fast", is_flag=True, help="Fast mode (lower latency)")
+@click.option("--provider", "-p", default=None, help="Context7 provider instance")
+@click.option("--port", default=None, type=int, help="Gateway port")
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def docs_context(
+    library_id: str,
+    query: str,
+    fast: bool,
+    provider: str | None,
+    port: int | None,
+    config: str | None,
+):
+    """Fetch version-accurate docs snippets for a Context7 library ID."""
+    port = _resolve_port(port)
+    _ensure_gateway_or_exit(port, config)
+    try:
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/docs/context",
+            json={
+                "library_id": library_id,
+                "query": query,
+                "fast": fast,
+                "provider": provider,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        click.echo(format_docs_context_output(resp.json()))
+    except Exception as e:
+        _exit_for_request_error(e)
+
+
+@docs.command(name="query")
+@click.argument("library_name")
+@click.argument("query")
+@click.option("--fast", is_flag=True, help="Fast mode (lower latency)")
+@click.option("--provider", "-p", default=None, help="Context7 provider instance")
+@click.option("--port", default=None, type=int, help="Gateway port")
+@click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
+def docs_query(
+    library_name: str,
+    query: str,
+    fast: bool,
+    provider: str | None,
+    port: int | None,
+    config: str | None,
+):
+    """One-shot docs lookup: resolve library ID then fetch Context7 docs."""
+    port = _resolve_port(port)
+    _ensure_gateway_or_exit(port, config)
+    try:
+        search_resp = httpx.post(
+            f"http://127.0.0.1:{port}/docs/search",
+            json={
+                "library_name": library_name,
+                "query": query,
+                "fast": fast,
+                "provider": provider,
+            },
+            timeout=60.0,
+        )
+        search_resp.raise_for_status()
+        hits = search_resp.json().get("results") or []
+        if not hits:
+            click.echo(f"No matching Context7 library found for '{library_name}'.", err=True)
+            sys.exit(1)
+        library_id = hits[0].get("id")
+        if not library_id:
+            click.echo("Error: Resolved library hit missing id.", err=True)
+            sys.exit(1)
+        ctx_resp = httpx.post(
+            f"http://127.0.0.1:{port}/docs/context",
+            json={
+                "library_id": library_id,
+                "query": query,
+                "fast": fast,
+                "provider": provider,
+            },
+            timeout=60.0,
+        )
+        ctx_resp.raise_for_status()
+        click.echo(format_docs_context_output(ctx_resp.json()))
+    except Exception as e:
+        _exit_for_request_error(e)
+
+
 @cli.command()
 @click.option("--port", default=None, type=int, help="Gateway port")
 @click.option("--config", "-c", default=None, help="Config file path (default: ~/.sg/config.json)")
@@ -698,70 +834,42 @@ def _find_prompt(name: str) -> Path | None:
 _SKILL_MD = """---
 name: search-gateway
 description: >
-  Use when the user needs web search, latest information, webpage content extraction, or deep research.
-  Triggers on "搜索一下", "查一下", "最新", "提取网页", "深度研究", "search for", "look up", "extract URL".
+  Unified CLI for web search, official library docs (Context7), webpage extraction (local defuddle first with zero-cost fast path and automatic cloud failover), and deep research.
+  Use for "搜索一下", "查一下", "查文档", "官方文档", "最新", "提取网页", "深度研究", "search for", "look up", "extract URL".
 ---
 
 # Search Gateway
 
-本机装了 search-gateway，遇到搜索/提取/研究需求**优先**用它（聚合多引擎、自动故障转移、本地无限制）。
+本机统一联网检索、库文档查询与网页正文提取入口（内置本地 `defuddle` `priority=0` 免费优先 + 多云端引擎自动故障转移）。
 
-## 先决条件
+## 先选对路径（避免浪费额度与时间）
 
-- `search-gateway status` 显示 running；没跑就 `search-gateway start --daemon`
-- 首次使用：`search-gateway init` 创建 `~/.sg/config.json`（不配 key 默认用 DuckDuckGo）
-- CLI 会复用 `~/.sg/runtime.json` 中最近登记的端口；显式 `--port` 优先，服务可用性以 HTTP `/status` 为准
+| 目标 | 正确做法 | 禁止 |
+|------|----------|------|
+| 本地已有仓库 | 直接读文件 + `rg` + `git` | 走网页抓取 |
+| 外部 GitHub 单文件 / PR / Issue / Release | `gh api` / `gh pr view` / `gh issue view` / `raw.githubusercontent.com` | 对 `github.com` 源码页调 `extract` |
+| 系统分析外部开源仓库 | `git clone --depth 1 <url> <临时目录>` 后本地检索 | 逐文件反复 `extract` |
+| 查第三方库 API / 官方文档 | `search-gateway docs query "<lib>" "<query>"`（已知库 ID 用 `docs context --fast`） | 盲搜后再连抓多个文档页 |
+| 联网搜索最新信息 | `search-gateway search "query"`，优先直接用 snippet 作答 | 搜完对结果逐条批抓 |
+| 提取公开网页 / `.md` 正文 | `search-gateway extract "<url1>" ["<url2>" ...]`（多 URL 一次并发传参） | 逐个串行或手动 `-p` 绕过路由 |
+| 需登录态 / 内网 / 交互点击页面 | 改用浏览器自动化工具处理 | 走 `extract` 硬抓 |
 
-## 核心命令（CLI 直接用）
+## 核心命令
 
 | 场景 | 命令 |
 |------|------|
-| 搜索 | `search-gateway search "query"` |
-| 批量搜索 | `search-gateway search "q1" "q2" "q3"` |
-| 限制结果数 | `search-gateway search "query" -n 10` |
-| 按时间过滤 | `search-gateway search "query" --time-range week` |
-| 限定域名 | `search-gateway search "query" --include-domain github.com` |
-| 排除域名 | `search-gateway search "query" --exclude-domain medium.com` |
-| 提取网页 | `search-gateway extract "https://example.com"` |
-| 深度研究 | `search-gateway research "topic"` |
-| 更深入研究 | `search-gateway research "topic" -d pro` |
-| 查看状态 | `search-gateway status` |
+| 搜索（支持多词/域过滤） | `search-gateway search "query" [-n 10] [--time-range week] [--include-domain ...]` |
+| 提取网页（单/多 URL 并发） | `search-gateway extract "https://a.com" "https://b.com"` |
+| 一步查库文档（Context7） | `search-gateway docs query "httpx" "AsyncClient timeout"` |
+| 分步查库文档（低延迟） | `search-gateway docs search "httpx" "streaming"` → `search-gateway docs context "/encode/httpx" "streaming" --fast` |
+| 深度研究 | `search-gateway research "topic" [-d pro]` |
+| 状态与引擎列表 | `search-gateway status` / `search-gateway providers` |
 
-## 集成到 AI 工具（按场景选一种）
+## 实战注意
 
-| 场景 | 命令 / 配置 |
-|---|---|
-| OpenCode 原生 plugin（websearch / webfetch / context7） | `search-gateway plugin install && search-gateway plugin setup` |
-| OpenCode remote MCP | `opencode.json` 的 `mcp` 段加 `http://127.0.0.1:8100/mcp`（`type: remote`, `oauth: false`） |
-| Claude Code MCP | `claude mcp add search-gateway stdio search-gateway mcp` |
-| Codex / Kimi（TOML） | `[mcp_servers.search-gateway]` `command = "search-gateway"` `args = ["mcp"]` |
-| Gemini CLI（JSON） | `~/.gemini/settings.json` 的 `mcpServers.search-gateway` |
-| HTTP API（任意语言） | `search-gateway start` 后 POST 当前实例的 `http://127.0.0.1:<port>/{search,extract,research}` |
-| Python SDK | `from sg.sdk import SearchClient` |
-
-## macOS daemon 自启（可选）
-
-让 sg 开机自启、崩溃拉起，OpenCode plugin / MCP 常驻依赖建议配：
-
-- 仓库内：`make install-launchd`
-- 详细步骤：`docs/install/macos-daemon.md`
-
-## AI 引导式配置（可选）
-
-`search-gateway setup` 输出交互式配置向导 prompt（带用户配 provider API key、选集成方式）。
-
-## Known Gotchas
-
-- **结果已内联**：`search` / `extract` / `research` 的正文在 stdout 里，**直接用输出作答**，不要再读历史文件。
-- **不要手动指定 provider**：自动路由已配多 provider 故障转移，手动 `-p tavily` 会绕过最优选择。仅在用户明确要求某 provider 时才用 `-p`。
-- **网关未启动时自动启动**：首次调用可能因后台启动稍慢，若收到 "Gateway not running"，等 3-5 秒重试。
-- **搜完别乱 extract**：用 search 的 snippet 答题；只有用户明确要整页正文时才 `extract` 给定 URL。
-
-## 更多
-
-- 完整文档：https://github.com/chyax98/sg
-- 安装方案：`docs/install/{uv,source,macos-daemon}.md`
-- 集成方案对比：README.md "集成方案对比" 段
+- **结果直接内联在 stdout**：直接用输出作答，不再读历史落盘文件。
+- **不要手动 `-p` 指定引擎**：`extract` 自动优先走本地免费 `defuddle`（静态页/raw `.md` 约 0.5–1.2s），遇 SPA 或反爬 403 无熔断自动回退云端（云端回退可能需 10–35s，留足超时勿提前中断）。
+- **服务未跑时**：若提示 Gateway not running，等 3–5 秒重试或运行 `search-gateway start --daemon`。
 """
 
 

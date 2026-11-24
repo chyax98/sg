@@ -229,7 +229,7 @@ class Gateway:
                 return await self.executor.execute(  # type: ignore[no-any-return]
                     "extract",
                     op,
-                    spread_index=idx,
+                    spread_index=None if self._top_extract_group_is_free() else idx,
                 )
 
             tasks = [_extract_one(url, i) for i, url in enumerate(urls)]
@@ -279,6 +279,13 @@ class Gateway:
         )
         response.result_files = file_manifest
         return response
+
+    def _top_extract_group_is_free(self) -> bool:
+        groups = self.providers.get_group_order("extract")
+        if not groups:
+            return False
+        inst = self.providers.select_instance(groups[0], "extract")
+        return bool(inst and inst.info.free)
 
     async def research(
         self, topic: str, depth: ResearchDepth = "auto", provider: str | None = None
